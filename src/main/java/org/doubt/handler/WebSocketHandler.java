@@ -1,4 +1,4 @@
-package org.doubt.Handler;
+package org.doubt.handler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.TextMessage;
