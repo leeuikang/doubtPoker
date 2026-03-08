@@ -3,30 +3,28 @@ package org.doubt.handler;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.WebSocketSession;
 
-import java.util.Collections;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class SessionManager {
-    private Map<String, Set<WebSocketSession>> sessionMap = new ConcurrentHashMap<>();
+    private Map<String, Set<String>> sessionMap = new ConcurrentHashMap<>();
 
-    public void addSession(String roomId, WebSocketSession session) {
-        sessionMap.computeIfAbsent(roomId, k -> ConcurrentHashMap.newKeySet()).add(session);
+    public void addUserToRoom(String roomId, String userName) {
+        sessionMap.computeIfAbsent(roomId, k -> ConcurrentHashMap.newKeySet()).add(userName);
     }
 
-    public void removeSession(String roomId, WebSocketSession session) {
-        Set<WebSocketSession> sessions = sessionMap.get(roomId);
-        if(sessions != null) {
-            sessions.remove(session);
-            if(sessions.isEmpty()) {
+    public void removeUserFromRoom(String roomId, String userName) {
+        Set<String> users = sessionMap.get(roomId);
+        if(users != null) {
+            users.remove(userName);
+            if(users.isEmpty()) {
                 sessionMap.remove(roomId);
             }
         }
     }
 
-    public Set<WebSocketSession> getSessions(String roomId) {
-        return sessionMap.getOrDefault(roomId, Collections.emptySet());
+    public List<String> getUserList(String roomId) {
+        return new ArrayList<>(sessionMap.getOrDefault(roomId, Collections.emptySet()));
     }
 }
