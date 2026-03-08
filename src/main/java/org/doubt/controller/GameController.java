@@ -8,6 +8,8 @@ import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
+import java.util.Objects;
+
 @Controller
 @RequiredArgsConstructor
 public class GameController {
@@ -21,8 +23,8 @@ public class GameController {
 
     @MessageMapping("/game/join")
     public void processJoinRoom(GameMessage message, SimpMessageHeaderAccessor headerAccessor){
-        headerAccessor.getSessionAttributes().put("roomId", message.roomId());
-        headerAccessor.getSessionAttributes().put("userName", message.sender());
+        Objects.requireNonNull(headerAccessor.getSessionAttributes()).put("roomId", message.roomId());
+        Objects.requireNonNull(headerAccessor.getSessionAttributes()).put("userName", message.sender());
 
         sessionManager.addUserToRoom(message.roomId(), message.sender());
 
