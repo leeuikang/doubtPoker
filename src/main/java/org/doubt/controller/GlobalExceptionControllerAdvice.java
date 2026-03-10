@@ -14,9 +14,7 @@ import org.springframework.web.bind.annotation.ControllerAdvice;
 @Slf4j
 @ControllerAdvice
 @RequiredArgsConstructor
-public class MessageExceptionControllerAdvice {
-
-    private final SimpMessagingTemplate messagingTemplate;
+public class GlobalExceptionControllerAdvice {
 
     @MessageExceptionHandler(GameException.class)
     @SendToUser("/queue/errors")
