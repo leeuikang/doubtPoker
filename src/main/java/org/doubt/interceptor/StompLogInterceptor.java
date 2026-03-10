@@ -21,7 +21,7 @@ public class StompLogInterceptor implements ChannelInterceptor {
         if(StompCommand.SEND.equals(command)){
             String sessionId = accessor.getSessionId();
             String payload = new String((byte[]) message.getPayload());
-            log.info("Client connected: sessionId={}, destination={}, payload={}", sessionId, destination, payload);
+            log.info("InBound Dest: sessionId={}, destination={}, payload={}", sessionId, destination, payload);
         }else if(StompCommand.MESSAGE.equals(command)){
             log.info("OutBound Dest:{}", destination);
         }
