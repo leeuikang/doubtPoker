@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.Setter;
 import org.doubt.constant.GameStatus;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -17,6 +18,7 @@ public class PokerRoom {
     private GameStatus status;
     private int currentIndex;
     private int totalPot;
+    private LocalDateTime lastActivityTime;
 
     public PokerRoom(String roomId, String roomName) {
         this.roomId = roomId;
@@ -25,5 +27,10 @@ public class PokerRoom {
         this.status = GameStatus.READY;
         this.currentIndex = 0;
         this.totalPot = 0;
+        lastActivityTime = LocalDateTime.now();
+    }
+
+    public void updateActivityTime(){
+        this.lastActivityTime = LocalDateTime.now();
     }
 }
