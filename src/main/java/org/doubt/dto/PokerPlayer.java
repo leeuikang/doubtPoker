@@ -1,7 +1,6 @@
 package org.doubt.dto;
 
 import lombok.Getter;
-import org.doubt.constant.ChipStatus;
 
 import java.util.List;
 
