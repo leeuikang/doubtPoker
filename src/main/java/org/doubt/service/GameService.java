@@ -35,7 +35,7 @@ public class GameService {
         int playerCount = room.getPlayerList().size();
 
         for(int i = 0; i < cardList.size(); i++){
-            room.getPlayerList().get(i % playerCount).hand().add(cardList.get(i));
+            room.getPlayerList().get(i % playerCount).getHand().add(cardList.get(i));
         }
 
         room.setStatus(GameStatus.PLAYING);
