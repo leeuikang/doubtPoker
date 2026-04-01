@@ -148,3 +148,34 @@ pokerRoomRepository.findById(roomId)
 
 - `handler/WebSocketHandler`, `handler/ChatHandler` — 레거시 raw WebSocket 코드, 주석 처리 상태. 복구하지 않는다.
 - 재시작 시 모든 데이터 초기화 (영속성 없음).
+
+---
+
+## Sub-Agent & Skill
+
+> 상세 설명: `.claude/AGENTS_AND_SKILLS.md`
+
+### Agents
+
+| 이름 | 호출 | 용도 |
+|------|------|------|
+| `game-logic-reviewer` | `@"game-logic-reviewer (agent)"` | 코드 컨벤션·게임 로직 리뷰 |
+| `rule-checker` | `@"rule-checker (agent)"` | ruleBook 기준 구현 검증 |
+| `test-writer` | `@"test-writer (agent)"` | 구현 완료 서비스의 JUnit5 단위 테스트 작성 |
+
+### Skills
+
+| 이름 | 호출 | 용도 |
+|------|------|------|
+| `impl-next` | `/impl-next [번호]` | IMPLEMENTATION_ORDER.md 다음 항목 구현 |
+| `round-flow` | `/round-flow` | 라운드 흐름·규칙 빠른 참조 |
+
+## MCP 서버
+
+> 설정 파일: `.mcp.json` (프로젝트 루트, git 공유)
+> 적용 확인: Claude Code 에서 `/mcp` 실행
+
+| 서버 | 용도 |
+|------|------|
+| `sequential-thinking` | 복잡한 게임 로직 설계 시 단계별 추론 (멜드 검증, 점수 배율 등) |
+| `playwright` | WebSocket 게임 흐름 E2E 테스트 (SockJS 연결 → 방 입장 → 턴 진행) |
