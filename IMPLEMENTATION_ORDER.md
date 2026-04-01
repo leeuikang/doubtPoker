@@ -2,9 +2,9 @@
 
 ## 1단계 — 기반 로직 (의존성 없음)
 
-- [ ] 1. `DeckService` — 52장 생성, 셔플, 플레이어별 7장 배분
-- [ ] 2. `MeldValidationService` — SET·STRAIGHT·SOLO_SEVEN 유효성, 거짓말 규칙(최대 1장), 확장 가능 여부
-- [ ] 3. `ScoreService` — 핸드 점수 계산(7→14점), 배율 항목(훌라4x·스탑패배2x·7보유2x·파산)
+- [V] 1. `DeckService` — 52장 생성, 셔플, 플레이어별 7장 배분
+- [V] 2. `MeldValidationService` — SET·STRAIGHT·SOLO_SEVEN 유효성, 거짓말 규칙(최대 1장), 확장 가능 여부
+- [V] 3. `ScoreService` — 핸드 점수 계산(7→14점), 배율 항목(훌라4x·스탑패배2x·7보유2x·파산)
 
 ## 2단계 — 라운드 흐름 (1단계 의존)
 
