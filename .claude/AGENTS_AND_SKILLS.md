@@ -114,6 +114,7 @@ PR 내용: !`gh pr view`
 |------|------|------|
 | `game-logic-reviewer` | `.claude/agents/game-logic-reviewer/SKILL.md` | 코드 컨벤션·게임 로직 리뷰 |
 | `rule-checker` | `.claude/agents/rule-checker/SKILL.md` | ruleBook 기준 구현 검증 |
+| `test-writer` | `.claude/agents/test-writer/SKILL.md` | JUnit5 단위 테스트 작성 |
 
 ### Skills
 
@@ -121,3 +122,23 @@ PR 내용: !`gh pr view`
 |------|------|------|
 | `impl-next` | `.claude/skills/impl-next/SKILL.md` | `/impl-next` |
 | `round-flow` | `.claude/skills/round-flow/SKILL.md` | `/round-flow` |
+
+---
+
+## MCP 서버
+
+설정 파일: `.mcp.json` (프로젝트 루트)
+적용 확인: `/mcp`
+
+| 서버 | npm 패키지 | 용도 |
+|------|-----------|------|
+| `sequential-thinking` | `@modelcontextprotocol/server-sequential-thinking` | 복잡한 게임 로직 단계별 추론 |
+| `playwright` | `@playwright/mcp` | WebSocket E2E 테스트 |
+| `git` | `@modelcontextprotocol/server-git` | 커밋 히스토리·diff 분석 |
+
+### 추후 추가 고려
+
+| 서버 | 시점 | 이유 |
+|------|------|------|
+| `postgres` | DB 도입 시 | 게임 전적·점수 영속화 |
+| `github` | PR 관리 필요 시 | 이슈·PR 자동화 |
