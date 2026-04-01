@@ -1,4 +1,4 @@
-/# CLAUDE.md
+# CLAUDE.md
 
 이 파일은 Claude Code(claude.ai/code)가 이 저장소에서 작업할 때 참고하는 가이드입니다.
 
@@ -28,43 +28,62 @@
 
 ## 아키텍처 개요
 
-**DoubtPoker**는 Spring Boot + STOMP over WebSocket 기반의 실시간 멀티플레이어 카드 게임 백엔드다. 외부 데이터베이스 없이 모든 상태를 인메모리로 관리한다.
+**DoubtPoker**는 거짓말 훌라(Doubt Hula) 카드 게임의 Spring Boot + STOMP over WebSocket 기반 백엔드다. 외부 DB 없이 모든 상태를 인메모리로 관리한다. 게임 규칙은 `ruleBook` 파일 참조.
 
 ### 메시지 흐름
 
 ```
-Client → /app/game/join    → GameController.processJoinRoom()
-Client → /app/game/bet     → GameController.processBat()
-Client → /app/chat/message → ChatController.sendMessage()
+Client → /app/game/join          → GameController.processJoinRoom()
+Client → /app/game/bet           → GameController.processBat()
+Client → /app/chat/message       → ChatController.sendMessage()
 
-Server → /topic/room/{roomId}  (방 전체 브로드캐스트)
-Server → /topic/chat           (글로벌 채팅)
-Server → /queue/errors         (개별 유저 에러 전달)
+Server → /topic/room/{roomId}    (방 전체 브로드캐스트)
+Server → /topic/chat             (글로벌 채팅)
+Server → /queue/errors           (개별 유저 에러 전달)
 ```
 
-WebSocket 엔드포인트: `/websocket` (SockJS 폴백 활성화, CORS: 전체 허용)
+WebSocket 엔드포인트: `/websocket` (SockJS 폴백, CORS 전체 허용)
 
 ### 레이어별 역할
 
 | 레이어 | 주요 클래스 | 역할 |
 |--------|-------------|------|
-| Controller | `GameController`, `ChatController` | `@MessageMapping` 핸들러 — STOMP 메시지 수신 후 서비스에 위임 |
-| Service | `RoomManagerService` | 비즈니스 로직; 10분 이상 비활성 방 자동 정리(스케줄러) |
-| Handler | `SessionManager` | `sessionId → roomId` 매핑을 `ConcurrentHashMap`으로 관리 |
-| Listener | `WebSocketEventListener` | 연결/해제 이벤트 처리; 접속 해제 시 플레이어 제거 |
-| Repository | `PokerRoomRepository` | `ConcurrentHashMap<String, PokerRoom>` 기반 인메모리 CRUD |
-| Exception | `GlobalExceptionControllerAdvice`, `GameException`, `ErrorCode` | `GameException` 포착 후 `/queue/errors`로 `ErrorMessage` 전송 |
-| Interceptor | `StompLogInterceptor` | STOMP SEND/MESSAGE 커맨드 로깅 |
+| Controller | `GameController`, `ChatController` | `@MessageMapping` 핸들러 |
+| Service | `RoundService`, `GameService`, `RoomManagerService` | 라운드 오케스트레이션, 룸 관리 |
+| Service | `DeckService`, `MeldValidationService`, `ScoreService` | 덱·멜드·점수 도메인 로직 |
+| Service | `TimerService`, `AIService` | 타이머 관리, AI 대체 진행 |
+| Handler | `SessionManager` | `sessionId → roomId` 매핑 (`ConcurrentHashMap`) |
+| Listener | `WebSocketEventListener` | 연결/해제 이벤트 → 플레이어 제거 |
+| Repository | `PokerRoomRepository` | `ConcurrentHashMap<String, PokerRoom>` 인메모리 CRUD |
+| Exception | `GlobalExceptionControllerAdvice`, `GameException`, `ErrorCode` | `GameException` 포착 → `/queue/errors` 전송 |
 
-### 주요 DTO
+### DTO 구조
 
-- `PokerRoom` — 방 상태: 플레이어 목록, 게임 상태, 팟, 마지막 활동 시각
-- `PokerPlayer` — 플레이어 세션 ID, 이름, 칩 수, 준비 여부
-- `PokerCard` — 모양(shape) + 숫자(Number)
-- `GameMessage` — 공통 봉투: `type(GameAction)`, `roomId`, `sender`, `payload`
-- `GameAction` enum: `PLAY_CARD`, `DOUBT`, `CHAT`, `READY`
-- `GameStatus` enum: `READY`, `PLAYING`, `FINISHED`
-- `ErrorCode` — 한국어 에러 메시지
+```
+dto/
+├── Card              - (Suit, Rank) record — 실제 카드
+├── DeclaredCard      - (Suit, Rank) record — 거짓말 선언 카드
+├── Meld              - 테이블 위 멜드 (actualCards, declaredCards, extensions 맵, isBluff)
+├── RoundState        - 라운드 전체 상태 (스톡, 버림더미, 턴 순서, 타이머 등)
+├── PlayerRoundState  - 라운드별 플레이어 상태 (손패, 멜드 여부, PlayerStatus)
+├── TournamentState   - 10판 토너먼트 점수 및 탈락 관리
+└── request/          - 클라이언트 요청 페이로드 (record)
+    ├── DrawRequest, MeldRequest, ExtendRequest, DiscardRequest
+    └── ThankYouRequest, StopRequest, DoubtRequest, RevealBluffRequest
+```
+
+### 주요 상수
+
+| 상수 | 값 |
+|------|----|
+| `Suit` | SPADE, HEART, DIAMOND, CLUB |
+| `Rank` | ACE(1) ~ KING(13), 7은 핸드에 남으면 14점 |
+| `MeldType` | SET, STRAIGHT, SOLO_SEVEN |
+| `GameAction` | DRAW, MELD, EXTEND, DISCARD, THANK_YOU, STOP, DOUBT, REVEAL_BLUFF, READY, CHAT |
+| `GameStatus` | WAITING, DEALING, IN_PROGRESS, ROUND_END, TOURNAMENT_END |
+| `TurnPhase` | DRAW → ACTION → DISCARD |
+| `RoundEndCondition` | GOING_OUT, STOP, STOCK_DEPLETED, BANKRUPTCY |
+| `PlayerStatus` | ACTIVE, DISCONNECTED, AI_CONTROLLED, ELIMINATED |
 
 ### 기술 스택
 
@@ -72,11 +91,60 @@ WebSocket 엔드포인트: `/websocket` (SockJS 폴백 활성화, CORS: 전체 �
 - **spring-boot-starter-websocket** (STOMP 메시징)
 - **spring-boot-starter-actuator**
 - **Lombok** (`@Slf4j`, `@RequiredArgsConstructor`, `@Getter`/`@Setter` 전반 사용)
-- Gradle Wrapper (v9.3.1)
-- JUnit 5
+- Gradle Wrapper (v9.3.1), JUnit 5
+
+---
+
+## 코드 패턴 및 컨벤션
+
+### Lombok
+
+- `@Data`, `@AllArgsConstructor` **사용 금지** — 선택적으로 `@Getter`, `@Setter`, `@RequiredArgsConstructor` 만 사용
+- 클래스 어노테이션 순서: `@Slf4j` → `@Service`/`@Controller` 등 스테레오타입 → `@RequiredArgsConstructor`
+
+```java
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class SomeService { ... }
+```
+
+### Record vs Class
+
+- **record**: 불변 값 객체 (요청 페이로드, 카드, 에러 메시지 등)
+- **class**: 변경 가능한 DTO나 도메인 객체 (`PokerRoom`, `RoundState`, `Meld` 등)
+
+### 의존성 주입
+
+- 필드 `@Autowired` **사용 금지**
+- 모든 의존성은 `private final` + `@RequiredArgsConstructor` 로 생성자 주입
+
+```java
+private final PokerRoomRepository pokerRoomRepository;
+private final SimpMessagingTemplate messagingTemplate;
+```
+
+### 예외 처리
+
+- 예외는 반드시 `GameException(ErrorCode)` 형태로 던진다
+- `Optional.orElseThrow()` 패턴 사용
+
+```java
+pokerRoomRepository.findById(roomId)
+    .orElseThrow(() -> new GameException(ErrorCode.ROOM_NOT_FOUND));
+```
+
+### 브로드캐스트
+
+- `SimpMessagingTemplate.convertAndSend()` 사용
+- 라우팅: `/topic/room/{roomId}` (방 전체), `/queue/errors` (개별 에러)
+- 메시지 타입은 `GameMessage` 공통 봉투 사용
+
+### 인메모리 동시성
+
+- 공유 상태는 `ConcurrentHashMap` 사용 (`HashMap` 사용 금지)
 
 ### 참고 사항
 
-- `handler/` 내 `WebSocketHandler`, `ChatHandler`는 레거시 raw WebSocket 방식 코드로 주석 처리되어 있다. 참고용으로 보존하며 복구하지 않는다.
-- 애플리케이션 재시작 시 모든 데이터가 초기화된다(영속성 없음).
-- 게임 규칙은 README.md의 Notion 링크 참조.
+- `handler/WebSocketHandler`, `handler/ChatHandler` — 레거시 raw WebSocket 코드, 주석 처리 상태. 복구하지 않는다.
+- 재시작 시 모든 데이터 초기화 (영속성 없음).
