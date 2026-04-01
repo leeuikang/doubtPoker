@@ -38,7 +38,7 @@ public class GameService {
             room.getPlayerList().get(i % playerCount).getHand().add(cardList.get(i));
         }
 
-        room.setStatus(GameStatus.PLAYING);
+        room.setStatus(GameStatus.IN_PROGRESS);
         room.updateActivityTime();
         broadcastRoom(roomId, new GameMessage("START", roomId, "SYSTEM", "게임이 시작되었습니다!"));
 

@@ -3,7 +3,6 @@ package org.doubt.dto;
 
 import lombok.Getter;
 import lombok.Setter;
-import org.doubt.constant.GameAction;
 import org.doubt.constant.GameStatus;
 
 import java.time.LocalDateTime;
@@ -16,7 +15,7 @@ public class PokerRoom {
     private String roomId;
     private String roomName;
     private List<PokerPlayer> playerList;
-    private GameAction status;
+    private GameStatus status;
     private int currentIndex;
     private int totalPot;
     private LocalDateTime lastActivityTime;
@@ -25,7 +24,7 @@ public class PokerRoom {
         this.roomId = roomId;
         this.roomName = roomName;
         this.playerList = new ArrayList<>();
-        this.status = GameAction.READY;
+        this.status = GameStatus.WAITING;
         this.currentIndex = 0;
         this.totalPot = 0;
         lastActivityTime = LocalDateTime.now();
