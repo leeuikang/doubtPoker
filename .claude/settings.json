@@ -1,0 +1,44 @@
+{
+  "hooks": {
+    "SubagentStart": [
+      {
+        "matcher": "game-logic-reviewer",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '[game-logic-reviewer] 코드 리뷰 시작...' >&2"
+          }
+        ]
+      },
+      {
+        "matcher": "rule-checker",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '[rule-checker] 규칙 검증 시작...' >&2"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "game-logic-reviewer",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '[game-logic-reviewer] 리뷰 완료.' >&2"
+          }
+        ]
+      },
+      {
+        "matcher": "rule-checker",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '[rule-checker] 검증 완료.' >&2"
+          }
+        ]
+      }
+    ]
+  }
+}
