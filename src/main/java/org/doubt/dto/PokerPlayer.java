@@ -1,4 +1,14 @@
 package org.doubt.dto;
 
-public record PokerPlayer(String sessionId, String name, int chips, boolean isReady) {
+import lombok.Getter;
+
+import java.util.List;
+
+@Getter
+public class PokerPlayer {
+    String sessionId;
+    String name;
+    int chips;
+    boolean isReady;
+    List<PokerCard> hand;
 }

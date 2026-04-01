@@ -10,7 +10,8 @@ public enum ErrorCode {
     NOT_IN_ROOM("방에 참여중이 아닙니다."),
     ROOM_FULL("방이 가득 찼습니다."),
     INVALID_CARD("낼 수 없는 카드입니다."),
-    INTERNAL_SERVER_ERROR("서버 에러입니다.");
+    INTERNAL_SERVER_ERROR("서버 에러입니다."),
+    ROOM_NOT_FOUND("방을 찾을 수 없습니다.");
 
     private final String message;
 }
