@@ -1,5 +1,9 @@
 package org.doubt.dto.request;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import org.doubt.dto.Card;
 import org.doubt.dto.DeclaredCard;
 
@@ -12,8 +16,8 @@ import java.util.List;
  * - declaredCards: 선언하는 카드 목록 (거짓말 포함 가능)
  */
 public record ExtendRequest(
-        String meldId,
-        List<Card> actualCards,
-        List<DeclaredCard> declaredCards
+        @NotBlank String meldId,
+        @NotNull @Size(min = 1, max = 13) @Valid List<Card> actualCards,
+        @NotNull @Size(min = 1, max = 13) @Valid List<DeclaredCard> declaredCards
 ) {
 }

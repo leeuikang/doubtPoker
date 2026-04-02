@@ -1,5 +1,8 @@
 package org.doubt.dto.request;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import org.doubt.constant.MeldType;
 import org.doubt.dto.Card;
 import org.doubt.dto.DeclaredCard;
@@ -13,8 +16,8 @@ import java.util.List;
  * - type         : SET / STRAIGHT / SOLO_SEVEN
  */
 public record MeldRequest(
-        List<Card> actualCards,
-        List<DeclaredCard> declaredCards,
-        MeldType type
+        @NotNull @Size(min = 3, max = 13) @Valid List<Card> actualCards,
+        @NotNull @Size(min = 3, max = 13) @Valid List<DeclaredCard> declaredCards,
+        @NotNull MeldType type
 ) {
 }

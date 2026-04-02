@@ -41,11 +41,20 @@
 
 ## MEDIUM
 
-### M-1 DTO 입력 유효성 검증 없음 [ ]
+### M-1 DTO 입력 유효성 검증 없음 [x]
 - **파일**: `src/main/java/org/doubt/dto/request/*.java`
 - **내용**: 요청 record에 `@NotNull`, `@Size` 등 검증 어노테이션 없음
 - **영향**: null 카드 리스트, 비정상 값으로 게임 로직 우회 가능
 - **수정 방향**: Jakarta Validation 어노테이션 추가
+- **수정 내용**:
+  - `build.gradle`: `spring-boot-starter-validation` 의존성 추가
+  - `DrawRequest`: `source` → `@NotNull`
+  - `MeldRequest`: `actualCards`, `declaredCards` → `@NotNull @NotEmpty @Valid`, `type` → `@NotNull`
+  - `ExtendRequest`: `meldId` → `@NotBlank`, `actualCards`, `declaredCards` → `@NotNull @NotEmpty @Valid`
+  - `DiscardRequest`: `card` → `@NotNull @Valid`
+  - `DoubtRequest`: `meldId` → `@NotBlank`
+  - `RevealBluffRequest`: `meldId` → `@NotBlank`
+  - `Card`, `DeclaredCard`: `suit`, `rank` 필드 → `@NotNull` (내포 객체 검증)
 
 ---
 
