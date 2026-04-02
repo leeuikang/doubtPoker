@@ -4,10 +4,11 @@ import org.doubt.dto.PokerRoom;
 import org.springframework.stereotype.Repository;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Repository
 public class PokerRoomRepository {
-    private final Map<String, PokerRoom> roomMap = new HashMap<>();
+    private final Map<String, PokerRoom> roomMap = new ConcurrentHashMap<>();
 
     public PokerRoom save(PokerRoom pokerRoom){
         roomMap.put(pokerRoom.getRoomId(), pokerRoom);

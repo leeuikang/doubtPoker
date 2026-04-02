@@ -23,7 +23,7 @@
 
 ---
 
-### H-3 PokerRoomRepository — HashMap 사용 [ ]
+### H-3 PokerRoomRepository — HashMap 사용 [V]
 - **파일**: `src/main/java/org/doubt/repository/PokerRoomRepository.java:10`
 - **내용**: `new HashMap<>()` 사용 — 멀티스레드 환경에서 thread-unsafe
 - **영향**: 동시 요청 시 게임 상태 손상, 데이터 유실
