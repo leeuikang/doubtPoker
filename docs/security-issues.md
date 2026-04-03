@@ -58,11 +58,16 @@
 
 ---
 
-### M-2 StompLogInterceptor 미등록 [ ]
+### M-2 StompLogInterceptor 미등록 [x]
 - **파일**: `src/main/java/org/doubt/interceptor/StompLogInterceptor.java`, `src/main/java/org/doubt/config/WebSocketConfig.java`
 - **내용**: 인터셉터가 빈으로 생성됐지만 WebSocketConfig에 등록되지 않아 미작동
 - **영향**: STOMP 메시지 인터셉션 불가, 향후 인증 로직 삽입 불가
 - **수정 방향**: `configureClientInboundChannel()`에 인터셉터 등록
+- **수정 내용**:
+  - `WebSocketConfig`: `@RequiredArgsConstructor`로 `StompLogInterceptor` 생성자 주입, `configureClientInboundChannel()` 오버라이드로 인터셉터 등록
+  - `StompLogInterceptor`: `(byte[]) cast` → `instanceof byte[] bytes` 패턴 매칭으로 교체 (ClassCastException 방지), `new String(bytes, StandardCharsets.UTF_8)` Charset 명시, `MESSAGE` 분기(inbound dead code) 제거
+  - `StompOutboundLogInterceptor` (신규): `MESSAGE` 커맨드 전용 outbound 로깅 인터셉터 생성
+  - `WebSocketConfig`: `configureClientOutboundChannel()` 오버라이드로 `StompOutboundLogInterceptor` 등록
 
 ---
 
