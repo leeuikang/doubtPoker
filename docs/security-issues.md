@@ -23,7 +23,7 @@
 
 ---
 
-### H-3 PokerRoomRepository — HashMap 사용 [V]
+### H-3 PokerRoomRepository — HashMap 사용 [x]
 - **파일**: `src/main/java/org/doubt/repository/PokerRoomRepository.java:10`
 - **내용**: `new HashMap<>()` 사용 — 멀티스레드 환경에서 thread-unsafe
 - **영향**: 동시 요청 시 게임 상태 손상, 데이터 유실
@@ -71,11 +71,18 @@
 
 ---
 
-### M-3 예외 응답 내부 정보 노출 [ ]
+### M-3 예외 응답 내부 정보 노출 [x]
 - **파일**: `src/main/java/org/doubt/controller/GlobalExceptionControllerAdvice.java`
 - **내용**: 일반 예외 처리 시 내부 정보가 클라이언트에 노출될 수 있음
 - **영향**: 공격자가 내부 구조 파악에 활용
 - **수정 방향**: 클라이언트에는 generic 메시지만, 상세 내용은 서버 로그에만 기록
+- **수정 내용**:
+  - `handleGameException`: `GameMessage` 봉투로 래핑, `log.warn("...", e.getErrorCode().name())` — 게임 규칙 위반은 WARN 레벨, 스택 트레이스 생략
+  - `handleException`: `GameMessage` 봉투로 래핑, `log.error("System Error", e)` — 전체 스택 트레이스 서버 로그 기록
+  - 두 핸들러 모두 `ErrorMessage`를 `GameMessage` payload로 감싸 응답 구조 통일 (`api-spec.md` 명세 준수)
+  - 하드코딩 메시지 제거 → `ErrorCode.INTERNAL_SERVER_ERROR.getMessage()` 직접 참조
+  - `@ControllerAdvice` + `@MessageExceptionHandler` 유지 (전역 예외 처리)
+  - `GameException`: cause 생성자 오버로드 추가 (`super(message, cause)`) — 예외 체인 보존
 
 ---
 
@@ -131,17 +138,18 @@
 
 ## 수정 우선순위 요약
 
-| 순위 | 이슈 | 이유 |
-|------|------|------|
-| 1 | H-3 HashMap | 코드 1줄, 즉시 수정 가능 |
-| 2 | H-4 NPE 크래시 | 서버 다운 방지 |
-| 3 | M-4 processBat 버그 | 명백한 버그 |
-| 4 | M-2 인터셉터 등록 | 이미 만들어진 코드 연결만 |
-| 5 | M-1 DTO 검증 | 게임 로직 안정성 |
-| 6 | L-1 로그 인젝션 | 코드 1줄 수정 |
-| 7 | L-2 null 안전성 | 크래시 방지 |
-| 8 | H-1 CORS | 배포 도메인 확정 후 |
-| 9 | H-2 인증/인가 | 설계 논의 필요 |
-| 10 | L-3 레이트 리밋 | 운영 단계에서 |
-| 11 | L-4 턴 검증 | 게임 로직 구현 완료 후 |
-| 12 | L-5 CSRF | H-1, H-2 해결 후 |
+| 순위 | 이슈 | 상태 | 이유 |
+|------|------|------|------|
+| 1 | H-3 HashMap | [x] | 코드 1줄, 즉시 수정 가능 |
+| 2 | H-4 NPE 크래시 | [ ] | 서버 다운 방지 |
+| 3 | M-4 processBat 버그 | [ ] | 명백한 버그 |
+| 4 | M-2 인터셉터 등록 | [x] | 이미 만들어진 코드 연결만 |
+| 5 | M-1 DTO 검증 | [x] | 게임 로직 안정성 |
+| 6 | M-3 예외 정보 노출 | [x] | 로그·응답 구조 정비 |
+| 7 | L-1 로그 인젝션 | [ ] | 코드 1줄 수정 |
+| 8 | L-2 null 안전성 | [ ] | 크래시 방지 |
+| 9 | H-1 CORS | [ ] | 배포 도메인 확정 후 |
+| 10 | H-2 인증/인가 | [ ] | 설계 논의 필요 |
+| 11 | L-3 레이트 리밋 | [ ] | 운영 단계에서 |
+| 12 | L-4 턴 검증 | [ ] | 게임 로직 구현 완료 후 |
+| 13 | L-5 CSRF | [ ] | H-1, H-2 해결 후 |
