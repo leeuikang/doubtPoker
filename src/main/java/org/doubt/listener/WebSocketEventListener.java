@@ -11,6 +11,8 @@ import org.springframework.stereotype.Controller;
 import org.springframework.web.socket.messaging.SessionConnectedEvent;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
+import java.util.Map;
+
 @Slf4j
 @Controller
 @RequiredArgsConstructor
@@ -27,18 +29,26 @@ public class WebSocketEventListener {
     @EventListener
     public void handleWebSocketDisconnectListener(SessionDisconnectEvent event){
         StompHeaderAccessor headerAccessor = StompHeaderAccessor.wrap(event.getMessage());
-        String roomId = headerAccessor.getSessionAttributes().get("roomId").toString();
-        String userName = headerAccessor.getSessionAttributes().get("userName").toString();
 
-        if(roomId != null && userName != null) {
-            log.info("User Disconnected: " + userName);
-
-            sessionManager.removeUserFromRoom(roomId, userName);
-
-            GameMessage message = new GameMessage(userName+" user-disconnected", roomId,
-                    userName, null);
-
-            messagingTemplate.convertAndSend("/topic/room/" + roomId, message);
+        Map<String, Object> attributes = headerAccessor.getSessionAttributes();
+        if (attributes == null) {
+            return;
         }
+
+        Object roomIdObj = attributes.get("roomId");
+        Object userNameObj = attributes.get("userName");
+        if (roomIdObj == null || userNameObj == null) {
+            return;
+        }
+
+        String roomId = roomIdObj.toString();
+        String userName = userNameObj.toString();
+
+        log.info("User Disconnected: {}", userName);
+
+        sessionManager.removeUserFromRoom(roomId, userName);
+
+        GameMessage message = new GameMessage(userName + " user-disconnected", roomId, userName, null);
+        messagingTemplate.convertAndSend("/topic/room/" + roomId, message);
     }
 }
