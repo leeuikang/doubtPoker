@@ -8,6 +8,8 @@ import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
+
 @Slf4j
 @Component
 public class StompLogInterceptor implements ChannelInterceptor {
@@ -15,15 +17,11 @@ public class StompLogInterceptor implements ChannelInterceptor {
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
         StompHeaderAccessor accessor = StompHeaderAccessor.wrap(message);
-        StompCommand command = accessor.getCommand();
-        String destination = accessor.getDestination();
 
-        if(StompCommand.SEND.equals(command)){
-            String sessionId = accessor.getSessionId();
-            String payload = new String((byte[]) message.getPayload());
-            log.info("InBound Dest: sessionId={}, destination={}, payload={}", sessionId, destination, payload);
-        }else if(StompCommand.MESSAGE.equals(command)){
-            log.info("OutBound Dest:{}", destination);
+        if (StompCommand.SEND.equals(accessor.getCommand())) {
+            Object raw = message.getPayload();
+            String payload = (raw instanceof byte[] bytes) ? new String(bytes, StandardCharsets.UTF_8) : raw.toString();
+            log.info("InBound: sessionId={}, dest={}, payload={}", accessor.getSessionId(), accessor.getDestination(), payload);
         }
 
         return message;
