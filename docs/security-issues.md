@@ -31,11 +31,16 @@
 
 ---
 
-### H-4 WebSocketEventListener — NPE 크래시 [ ]
+### H-4 WebSocketEventListener — NPE 크래시 [x]
 - **파일**: `src/main/java/org/doubt/listener/WebSocketEventListener.java:30-31`
 - **내용**: `sessionAttributes.get("roomId").toString()` — null 체크 없이 호출
 - **영향**: 연결 직후 끊긴 클라이언트로 서버 크래시 (DoS)
 - **수정 방향**: null 체크 후 조기 반환 처리
+- **수정 내용**:
+  - `getSessionAttributes()` null 체크 후 early return 추가
+  - `roomId`, `userName` 각각 null 체크 후 early return — `.toString()` 호출 전 검증
+  - 기존 사후 null 체크(`if(roomId != null && userName != null)`) 제거
+  - L-1(로그 인젝션) 동시 수정: `"..." + userName` → `"...: {}", userName`
 
 ---
 
@@ -96,11 +101,12 @@
 
 ## LOW
 
-### L-1 로그 문자열 연결 (로그 인젝션) [ ]
+### L-1 로그 문자열 연결 (로그 인젝션) [x]
 - **파일**: `src/main/java/org/doubt/listener/WebSocketEventListener.java:34`
 - **내용**: `log.info("User Disconnected: " + userName)` — 문자열 연결 방식
 - **영향**: 공격자가 제어하는 userName으로 로그 위조 가능
 - **수정 방향**: `log.info("User Disconnected: {}", userName)` 으로 변경
+- **수정 내용**: H-4 수정 시 동시 처리 — `{}` 플레이스홀더 방식으로 변경
 
 ---
 
@@ -141,12 +147,12 @@
 | 순위 | 이슈 | 상태 | 이유 |
 |------|------|------|------|
 | 1 | H-3 HashMap | [x] | 코드 1줄, 즉시 수정 가능 |
-| 2 | H-4 NPE 크래시 | [ ] | 서버 다운 방지 |
+| 2 | H-4 NPE 크래시 | [x] | 서버 다운 방지 |
 | 3 | M-4 processBat 버그 | [ ] | 명백한 버그 |
 | 4 | M-2 인터셉터 등록 | [x] | 이미 만들어진 코드 연결만 |
 | 5 | M-1 DTO 검증 | [x] | 게임 로직 안정성 |
 | 6 | M-3 예외 정보 노출 | [x] | 로그·응답 구조 정비 |
-| 7 | L-1 로그 인젝션 | [ ] | 코드 1줄 수정 |
+| 7 | L-1 로그 인젝션 | [x] | H-4 수정 시 동시 처리 |
 | 8 | L-2 null 안전성 | [ ] | 크래시 방지 |
 | 9 | H-1 CORS | [ ] | 배포 도메인 확정 후 |
 | 10 | H-2 인증/인가 | [ ] | 설계 논의 필요 |
