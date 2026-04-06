@@ -1,7 +1,9 @@
 package org.doubt.controller;
 
 import lombok.RequiredArgsConstructor;
+import org.doubt.constant.ErrorCode;
 import org.doubt.dto.GameMessage;
+import org.doubt.exception.GameException;
 import org.doubt.handler.SessionManager;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
@@ -17,8 +19,12 @@ public class GameController {
     private final SessionManager sessionManager;
 
     @MessageMapping("/game/bet")
-    public void processBat(GameMessage message){
-        messagingTemplate.convertAndSend("/topic/room" + message.getClass(), message);
+    public void processBat(GameMessage message, SimpMessageHeaderAccessor headerAccessor) {
+        String sessionRoomId = (String) Objects.requireNonNull(headerAccessor.getSessionAttributes()).get("roomId");
+        if (sessionRoomId == null || !sessionRoomId.equals(message.roomId())) {
+            throw new GameException(ErrorCode.NOT_IN_ROOM);
+        }
+        messagingTemplate.convertAndSend("/topic/room/" + message.roomId(), message);
     }
 
     @MessageMapping("/game/join")
