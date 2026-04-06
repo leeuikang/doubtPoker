@@ -33,6 +33,7 @@ public class GameService {
         Collections.shuffle(cardList);
 
         int playerCount = room.getPlayerList().size();
+        if (playerCount < 2) throw new GameException(ErrorCode.NOT_ENOUGH_PLAYERS);
 
         for(int i = 0; i < cardList.size(); i++){
             room.getPlayerList().get(i % playerCount).getHand().add(cardList.get(i));
