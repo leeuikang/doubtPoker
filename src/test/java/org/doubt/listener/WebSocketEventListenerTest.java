@@ -1,5 +1,6 @@
 package org.doubt.listener;
 
+import org.doubt.auth.NicknameRegistry;
 import org.doubt.dto.GameMessage;
 import org.doubt.handler.SessionManager;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,6 +35,9 @@ class WebSocketEventListenerTest {
 
     @Mock
     private SessionManager sessionManager;
+
+    @Mock
+    private NicknameRegistry nicknameRegistry;
 
     @Mock
     private SimpMessageSendingOperations messagingTemplate;
@@ -130,6 +134,8 @@ class WebSocketEventListenerTest {
 
             // sessionManager 호출 검증
             verify(sessionManager).removeUserFromRoom(eq(roomId), eq(userName));
+            // 닉네임 해제 검증
+            verify(nicknameRegistry).release(eq(userName));
 
             // 메시지 전송 검증 — 목적지와 GameMessage 내용 확인
             ArgumentCaptor<GameMessage> messageCaptor = ArgumentCaptor.forClass(GameMessage.class);

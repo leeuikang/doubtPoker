@@ -44,7 +44,8 @@ class StompAuthInterceptorTest {
     @BeforeEach
     void setUp() {
         interceptor = new StompAuthInterceptor(guestTokenService, nicknameRegistry);
-        when(nicknameRegistry.register(any())).thenReturn(true);
+        // CONNECT 외 커맨드 테스트에서는 호출되지 않으므로 lenient 처리
+        lenient().when(nicknameRegistry.register(any())).thenReturn(true);
     }
 
     // ----------------------------------------------------------------
