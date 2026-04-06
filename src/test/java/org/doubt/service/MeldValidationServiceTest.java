@@ -10,11 +10,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import java.lang.reflect.Field;
+import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.when;
 
 class MeldValidationServiceTest {
 
@@ -698,6 +701,69 @@ class MeldValidationServiceTest {
                     declared(Suit.DIAMOND, Rank.KING)
             ));
             assertFalse(service.canExtend(meld, List.of(), List.of()));
+        }
+
+        // ==================== L-2 null 안전성 픽스 검증 ====================
+
+        @Test
+        @DisplayName("canExtend: existingMeld가 null이면 false를 반환한다 (L-2)")
+        void null_existing_meld_returns_false() {
+            List<Card> newActual = List.of(card(Suit.SPADE, Rank.KING));
+            List<DeclaredCard> newDeclared = List.of(declared(Suit.SPADE, Rank.KING));
+
+            assertFalse(service.canExtend(null, newActual, newDeclared));
+        }
+
+        @Test
+        @DisplayName("canExtendSet: getDeclaredCards()가 빈 리스트를 반환하면 false를 반환한다 (L-2)")
+        void canExtendSet_empty_declared_cards_returns_false() {
+            Meld mockMeld = Mockito.mock(Meld.class);
+            when(mockMeld.getType()).thenReturn(MeldType.SET);
+            when(mockMeld.getDeclaredCards()).thenReturn(Collections.emptyList());
+
+            List<Card> newActual = List.of(card(Suit.CLUB, Rank.KING));
+            List<DeclaredCard> newDeclared = List.of(declared(Suit.CLUB, Rank.KING));
+
+            assertFalse(service.canExtend(mockMeld, newActual, newDeclared));
+        }
+
+        @Test
+        @DisplayName("canExtendSet: getDeclaredCards()가 null을 반환하면 false를 반환한다 (L-2)")
+        void canExtendSet_null_declared_cards_returns_false() {
+            Meld mockMeld = Mockito.mock(Meld.class);
+            when(mockMeld.getType()).thenReturn(MeldType.SET);
+            when(mockMeld.getDeclaredCards()).thenReturn(null);
+
+            List<Card> newActual = List.of(card(Suit.CLUB, Rank.KING));
+            List<DeclaredCard> newDeclared = List.of(declared(Suit.CLUB, Rank.KING));
+
+            assertFalse(service.canExtend(mockMeld, newActual, newDeclared));
+        }
+
+        @Test
+        @DisplayName("canExtendStraight: getDeclaredCards()가 빈 리스트를 반환하면 false를 반환한다 (L-2)")
+        void canExtendStraight_empty_declared_cards_returns_false() {
+            Meld mockMeld = Mockito.mock(Meld.class);
+            when(mockMeld.getType()).thenReturn(MeldType.STRAIGHT);
+            when(mockMeld.getDeclaredCards()).thenReturn(Collections.emptyList());
+
+            List<Card> newActual = List.of(card(Suit.SPADE, Rank.SEVEN));
+            List<DeclaredCard> newDeclared = List.of(declared(Suit.SPADE, Rank.SEVEN));
+
+            assertFalse(service.canExtend(mockMeld, newActual, newDeclared));
+        }
+
+        @Test
+        @DisplayName("canExtendStraight: getDeclaredCards()가 null을 반환하면 false를 반환한다 (L-2)")
+        void canExtendStraight_null_declared_cards_returns_false() {
+            Meld mockMeld = Mockito.mock(Meld.class);
+            when(mockMeld.getType()).thenReturn(MeldType.STRAIGHT);
+            when(mockMeld.getDeclaredCards()).thenReturn(null);
+
+            List<Card> newActual = List.of(card(Suit.SPADE, Rank.SEVEN));
+            List<DeclaredCard> newDeclared = List.of(declared(Suit.SPADE, Rank.SEVEN));
+
+            assertFalse(service.canExtend(mockMeld, newActual, newDeclared));
         }
     }
 }
