@@ -10,6 +10,7 @@ public enum ErrorCode {
     ROOM_NOT_FOUND("방을 찾을 수 없습니다."),
     ROOM_FULL("방이 가득 찼습니다."),
     NOT_IN_ROOM("방에 참여중이 아닙니다."),
+    NOT_ENOUGH_PLAYERS("게임을 시작하려면 최소 2명이 필요합니다."),
     // 턴/액션
     INVALID_TURN("내 차례가 아닙니다."),
     INVALID_TURN_PHASE("현재 단계에서 할 수 없는 행동입니다."),
