@@ -1,6 +1,7 @@
 package org.doubt.config;
 
 import lombok.RequiredArgsConstructor;
+import org.doubt.interceptor.ChatRateLimitInterceptor;
 import org.doubt.interceptor.StompLogInterceptor;
 import org.doubt.interceptor.StompOutboundLogInterceptor;
 import org.springframework.context.annotation.Configuration;
@@ -15,6 +16,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final StompLogInterceptor stompLogInterceptor;
     private final StompOutboundLogInterceptor stompOutboundLogInterceptor;
+    private final ChatRateLimitInterceptor chatRateLimitInterceptor;
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
@@ -30,7 +32,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
-        registration.interceptors(stompLogInterceptor);
+        registration.interceptors(stompLogInterceptor, chatRateLimitInterceptor);
     }
 
     @Override
