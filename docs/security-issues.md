@@ -91,11 +91,14 @@
 
 ---
 
-### M-4 processBat() roomId 버그 + 방 소속 검증 없음 [ ]
+### M-4 processBat() roomId 버그 + 방 소속 검증 없음 [x]
 - **파일**: `src/main/java/org/doubt/controller/GameController.java:19-22`
 - **내용**: `message.getClass()` 를 roomId로 잘못 사용, 발신자의 방 소속 검증 없음
 - **영향**: 메시지가 잘못된 토픽으로 전송됨, 타 방 메시지 조작 가능
 - **수정 방향**: 올바른 roomId 필드 사용, 방 소속 검증 추가
+- **수정 내용**:
+  - `processBat()`: `message.getClass()` → `message.roomId()`, 슬래시 누락 수정 (`/topic/room/` + roomId)
+  - `processBat()`: `SimpMessageHeaderAccessor` 파라미터 추가, STOMP 세션의 `roomId`와 메시지의 `roomId` 비교 — 불일치 시 `NOT_IN_ROOM` 예외 (사칭·타 방 메시지 조작 차단)
 
 ---
 
@@ -160,7 +163,7 @@
 |------|------|------|------|
 | 1 | H-3 HashMap | [x] | 코드 1줄, 즉시 수정 가능 |
 | 2 | H-4 NPE 크래시 | [x] | 서버 다운 방지 |
-| 3 | M-4 processBat 버그 | [ ] | 명백한 버그 |
+| 3 | M-4 processBat 버그 | [x] | 명백한 버그 |
 | 4 | M-2 인터셉터 등록 | [x] | 이미 만들어진 코드 연결만 |
 | 5 | M-1 DTO 검증 | [x] | 게임 로직 안정성 |
 | 6 | M-3 예외 정보 노출 | [x] | 로그·응답 구조 정비 |
