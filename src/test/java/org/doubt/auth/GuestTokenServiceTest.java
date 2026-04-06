@@ -29,12 +29,13 @@ class GuestTokenServiceTest {
     }
 
     // ----------------------------------------------------------------
-    // 테스트용 헬퍼: 동일한 비밀키로 HMAC 서명 생성
+    // 테스트용 헬퍼: 동일한 비밀키 + 서비스의 instanceId로 HMAC 서명 생성
     // ----------------------------------------------------------------
     private String buildValidTokenWithExpiry(String nickname, long expiresAt) throws Exception {
         String guestId = "test-guest-id";
         long issuedAt = System.currentTimeMillis();
-        String raw = guestId + ":" + issuedAt + ":" + expiresAt + ":" + nickname;
+        // instanceId는 서비스에서 가져와야 재시작 무효화 검증을 통과할 수 있다
+        String raw = guestId + ":" + issuedAt + ":" + expiresAt + ":" + tokenService.getInstanceId() + ":" + nickname;
 
         String payloadB64 = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(raw.getBytes(StandardCharsets.UTF_8));
@@ -108,7 +109,7 @@ class GuestTokenServiceTest {
             String[] parts = token.split("\\.", 2);
 
             // 다른 닉네임으로 페이로드를 만들어 원본 서명과 조합
-            String fakeRaw = "fake-guest-id:0:99999999999999:attacker";
+            String fakeRaw = "fake-guest-id:0:99999999999999:fake-instance:attacker";
             String fakePayloadB64 = Base64.getUrlEncoder().withoutPadding()
                     .encodeToString(fakeRaw.getBytes(StandardCharsets.UTF_8));
             String tamperedToken = fakePayloadB64 + "." + parts[1];
@@ -143,9 +144,9 @@ class GuestTokenServiceTest {
         @Test
         @DisplayName("페이로드 필드 수가 부족한 토큰은 TOKEN_INVALID 예외가 발생한다")
         void token_with_wrong_payload_fields_throws_token_invalid() {
-            // 필드가 3개뿐인 페이로드(닉네임 누락)로 올바른 서명을 붙여 검증
+            // 필드가 4개뿐인 페이로드(nickname 누락)로 올바른 서명을 붙여 검증
             try {
-                String raw = "guest-id:12345:99999999999999"; // 4번째 필드(nickname) 없음
+                String raw = "guest-id:12345:99999999999999:some-instance-id"; // 5번째 필드(nickname) 없음
                 String payloadB64 = Base64.getUrlEncoder().withoutPadding()
                         .encodeToString(raw.getBytes(StandardCharsets.UTF_8));
                 Mac mac = Mac.getInstance("HmacSHA256");
@@ -167,7 +168,7 @@ class GuestTokenServiceTest {
         @DisplayName("만료 시각 필드가 숫자가 아닌 토큰은 TOKEN_INVALID 예외가 발생한다")
         void token_with_non_numeric_expiry_throws_token_invalid() {
             try {
-                String raw = "guest-id:12345:not-a-number:nickname";
+                String raw = "guest-id:12345:not-a-number:some-instance-id:nickname";
                 String payloadB64 = Base64.getUrlEncoder().withoutPadding()
                         .encodeToString(raw.getBytes(StandardCharsets.UTF_8));
                 Mac mac = Mac.getInstance("HmacSHA256");
@@ -183,6 +184,20 @@ class GuestTokenServiceTest {
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }
+        }
+
+        @Test
+        @DisplayName("다른 서버 인스턴스가 발급한 토큰은 TOKEN_INVALID 예외가 발생한다 (재시작 무효화)")
+        void token_from_different_instance_throws_token_invalid() throws Exception {
+            // 다른 instanceId로 별도 서비스 인스턴스를 생성하여 토큰 발급
+            GuestTokenService otherInstance = new GuestTokenService(SECRET, EXPIRY_HOURS);
+            String tokenFromOtherInstance = otherInstance.issue("player");
+
+            // 현재 tokenService로 검증 → instanceId 불일치 → TOKEN_INVALID
+            assertThatThrownBy(() -> tokenService.verify(tokenFromOtherInstance))
+                    .isInstanceOf(GameException.class)
+                    .satisfies(ex -> assertThat(((GameException) ex).getErrorCode())
+                            .isEqualTo(ErrorCode.TOKEN_INVALID));
         }
 
         @Test

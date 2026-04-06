@@ -170,11 +170,12 @@ CORS 수정은 **배포 도메인 확정 후** 진행하되, `application.yml` �
 
 ---
 
-## 미결 사항 (논의 필요)
+## 미결 사항 결정 내역
 
-| 항목 | 선택지 | 결정 필요 이유 |
+| 항목 | 결정 | 구현 |
 |------|------|------|
-| 토큰 서명 키 관리 | 환경변수 / application.yml / Vault | 인메모리 서버 재시작 시 기존 토큰 무효화 여부 |
-| 토큰 만료 시간 | 1시간 / 게임 종료까지 / 무제한 | 게임 도중 만료 시 reconnect 처리 필요 |
-| 닉네임 중복 허용 여부 | 방 내 중복 금지 / 전체 중복 금지 / 허용 | identity 충돌 시 게임 판정 영향 |
-| 배포 도메인 | 미확정 | H-1 CORS 수정 선행 조건 |
+| 토큰 서명 키 관리 | `application.yml`에서 관리 | `app.auth.secret` 프로퍼티 |
+| 재시작 시 기존 토큰 무효화 | 무효화 | `GuestTokenService` 기동 시 `instanceId` 생성, payload에 포함 — 재시작 후 다른 instanceId로 TOKEN_INVALID |
+| 토큰 만료 시간 | 1시간 | `app.auth.expiry-hours: 1` |
+| 닉네임 중복 허용 여부 | 전체 중복 금지 | `NicknameRegistry` — CONNECT 시 등록, DISCONNECT 시 해제 → 중복 시 DUPLICATE_NICKNAME |
+| 배포 도메인 | 미확정 | H-1 CORS 수정 선행 조건 (application.yml 구조는 준비됨)

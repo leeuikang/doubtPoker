@@ -1,0 +1,8 @@
+spring:
+  application:
+    name: DoubtPoker
+
+app:
+  auth:
+    secret: doubt-poker-secret-key-change-in-production
+    expiry-hours: 1

@@ -18,27 +18,31 @@ import java.util.UUID;
  * Guest 토큰 발급 및 검증 서비스 (H-2)
  *
  * 토큰 포맷: {Base64Url(payload)}.{Base64Url(HMAC-SHA256)}
- * payload  : {guestId}:{issuedAt}:{expiresAt}:{nickname}
- *   - guestId   : UUID
- *   - issuedAt  : Unix 밀리초
- *   - expiresAt : Unix 밀리초
- *   - nickname  : 마지막 필드 (콜론 포함 가능하도록 split 4번째 이후로 처리)
+ * payload  : {guestId}:{issuedAt}:{expiresAt}:{instanceId}:{nickname}
+ *   - guestId    : UUID (발급마다 고유)
+ *   - issuedAt   : Unix 밀리초
+ *   - expiresAt  : Unix 밀리초
+ *   - instanceId : 서버 기동 시 생성된 UUID — 재시작 시 기존 토큰 전체 무효화
+ *   - nickname   : 마지막 필드 (콜론 포함 가능하도록 split(5) 이후로 처리)
  */
 @Slf4j
 @Service
 public class GuestTokenService {
 
     private static final String ALGORITHM = "HmacSHA256";
-    private static final int PAYLOAD_FIELDS = 4;
+    private static final int PAYLOAD_FIELDS = 5;
 
     private final byte[] secretKeyBytes;
     private final long expiryMillis;
+    private final String instanceId;
 
     public GuestTokenService(
             @Value("${app.auth.secret}") String secret,
             @Value("${app.auth.expiry-hours}") int expiryHours) {
         this.secretKeyBytes = secret.getBytes(StandardCharsets.UTF_8);
         this.expiryMillis = (long) expiryHours * 3600_000L;
+        this.instanceId = UUID.randomUUID().toString();
+        log.info("GuestTokenService initialized: instanceId={}", instanceId);
     }
 
     public String issue(String nickname) {
@@ -46,7 +50,7 @@ public class GuestTokenService {
         long now = System.currentTimeMillis();
         long expiresAt = now + expiryMillis;
 
-        String raw = guestId + ":" + now + ":" + expiresAt + ":" + nickname;
+        String raw = guestId + ":" + now + ":" + expiresAt + ":" + instanceId + ":" + nickname;
         String payloadB64 = base64Encode(raw);
         String signatureB64 = base64Encode(hmac(payloadB64));
         return payloadB64 + "." + signatureB64;
@@ -77,11 +81,21 @@ public class GuestTokenService {
             throw new GameException(ErrorCode.TOKEN_INVALID);
         }
 
+        // 서버 인스턴스 검증 — 재시작 후에는 기존 토큰 무효화
+        if (!instanceId.equals(fields[3])) {
+            throw new GameException(ErrorCode.TOKEN_INVALID);
+        }
+
         if (System.currentTimeMillis() > expiresAt) {
             throw new GameException(ErrorCode.TOKEN_EXPIRED);
         }
 
-        return new GuestClaims(fields[0], fields[3]);
+        return new GuestClaims(fields[0], fields[4]);
+    }
+
+    /** 테스트에서 instanceId 주입 토큰 생성 시 사용 */
+    String getInstanceId() {
+        return instanceId;
     }
 
     private byte[] hmac(String data) {

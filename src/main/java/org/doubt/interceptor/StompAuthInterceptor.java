@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.doubt.auth.GuestClaims;
 import org.doubt.auth.GuestTokenService;
+import org.doubt.auth.NicknameRegistry;
 import org.doubt.constant.ErrorCode;
 import org.doubt.exception.GameException;
 import org.springframework.messaging.Message;
@@ -34,6 +35,7 @@ public class StompAuthInterceptor implements ChannelInterceptor {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final GuestTokenService guestTokenService;
+    private final NicknameRegistry nicknameRegistry;
 
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
@@ -48,7 +50,13 @@ public class StompAuthInterceptor implements ChannelInterceptor {
         }
 
         String token = authHeader.substring(BEARER_PREFIX.length());
-        GuestClaims claims = guestTokenService.verify(token); // 만료·서명 검증, 실패 시 GameException
+        GuestClaims claims = guestTokenService.verify(token); // 만료·서명·instanceId 검증
+
+        // 닉네임 전체 중복 금지
+        if (!nicknameRegistry.register(claims.nickname())) {
+            log.warn("STOMP CONNECT rejected — duplicate nickname: nickname={}", claims.nickname());
+            throw new GameException(ErrorCode.DUPLICATE_NICKNAME);
+        }
 
         Map<String, Object> attrs = Objects.requireNonNull(accessor.getSessionAttributes());
         attrs.put("guestId", claims.guestId());

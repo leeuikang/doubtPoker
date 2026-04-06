@@ -2,6 +2,7 @@ package org.doubt.listener;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.doubt.auth.NicknameRegistry;
 import org.doubt.dto.GameMessage;
 import org.doubt.handler.SessionManager;
 import org.springframework.context.event.EventListener;
@@ -19,6 +20,7 @@ import java.util.Map;
 public class WebSocketEventListener {
 
     private final SessionManager sessionManager;
+    private final NicknameRegistry nicknameRegistry;
     private final SimpMessageSendingOperations messagingTemplate;
 
     @EventListener
@@ -47,6 +49,7 @@ public class WebSocketEventListener {
         log.info("User Disconnected: {}", userName);
 
         sessionManager.removeUserFromRoom(roomId, userName);
+        nicknameRegistry.release(userName);
 
         GameMessage message = new GameMessage(userName + " user-disconnected", roomId, userName, null);
         messagingTemplate.convertAndSend("/topic/room/" + roomId, message);

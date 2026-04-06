@@ -28,6 +28,7 @@ public enum ErrorCode {
     UNAUTHORIZED("인증이 필요합니다."),
     TOKEN_EXPIRED("토큰이 만료되었습니다."),
     TOKEN_INVALID("유효하지 않은 토큰입니다."),
+    DUPLICATE_NICKNAME("이미 사용 중인 닉네임입니다."),
     // 서버
     INTERNAL_SERVER_ERROR("서버 에러입니다.");
 
