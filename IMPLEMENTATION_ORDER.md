@@ -8,8 +8,8 @@
 
 ## 2단계 — 라운드 흐름 (1단계 의존)
 
-- [ ] 4. `RoundService` - 라운드 시작 — `startRound`: 덱 배분, 초기 `RoundState` 구성, 선 플레이어 결정
-- [ ] 5. `RoundService` - 드로우 — `handleDraw`: 스톡/버림더미 처리, 스톡 소진 시 재구성(최대 2회)
+- [V] 4. `RoundService` - 라운드 시작 — `startRound`: 덱 배분, 초기 `RoundState` 구성, 선 플레이어 결정
+- [V] 5. `RoundService` - 드로우 — `handleDraw`: 스톡/버림더미 처리, 스톡 소진 시 재구성(최대 2회)
 - [ ] 6. `RoundService` - 멜드/확장 — `handleMeld`, `handleExtend`: `MeldValidationService` 연동
 - [ ] 7. `RoundService` - 버리기 — `handleDiscard`: 버림더미 push, 땡큐 타이머 5초 트리거
 - [ ] 8. `RoundService` - 특수 선언 — `handleThankYou`, `handleStop`, `handleDoubt`, `handleRevealBluff`
