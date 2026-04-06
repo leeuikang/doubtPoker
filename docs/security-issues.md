@@ -110,19 +110,31 @@
 
 ---
 
-### L-2 MeldValidationService / GameService null 안전성 미흡 [ ]
+### L-2 MeldValidationService / GameService null 안전성 미흡 [x]
 - **파일**: `src/main/java/org/doubt/service/MeldValidationService.java:145-150`, `src/main/java/org/doubt/service/GameService.java:37-39`
 - **내용**: `getDeclaredCards()`, `getHand()` 반환값에 null 체크 없음
 - **영향**: 특정 게임 상태에서 NPE 크래시
 - **수정 방향**: null 체크 또는 방어적 초기화 추가
+- **수정 내용**:
+  - `PokerPlayer.hand`: `List<PokerCard> hand = new ArrayList<>()` 방어적 초기화 — 필드 선언 시점에 초기화해 `getHand().add()` NPE 원천 차단
+  - `MeldValidationService.canExtend()`: `existingMeld == null` 체크 추가
+  - `MeldValidationService.canExtendSet()`: `existing == null || existing.isEmpty()` 체크 추가 — `get(0)` 호출 전 빈 리스트 방어
+  - `MeldValidationService.canExtendStraight()`: 동일하게 `existing == null || existing.isEmpty()` 체크 추가
+  - `GameService.startGame()`: `playerCount < 2` 시 `NOT_ENOUGH_PLAYERS` 예외 — ruleBook 제2조(2~5명) 위반 차단 및 ArithmeticException(0으로 나누기) 방지
+  - `ErrorCode.NOT_ENOUGH_PLAYERS` 신규 추가
 
 ---
 
-### L-3 WebSocket 메시지 레이트 리밋 없음 [ ]
+### L-3 WebSocket 메시지 레이트 리밋 없음 [x]
 - **파일**: `src/main/java/org/doubt/controller/ChatController.java`
 - **내용**: 메시지 전송 빈도 제한 없음
 - **영향**: 채팅 스팸, 메시지 폭탄으로 CPU/메모리 고갈
 - **수정 방향**: 세션별 메시지 전송 횟수 제한 (인터셉터 활용)
+- **수정 내용**:
+  - `ChatRateLimitInterceptor` (신규): 세션별 분당 최대 20건 제한 — 슬라이딩 윈도우 방식, `/app/chat/message` destination 한정
+  - `ConcurrentHashMap<String, RateLimitBucket>` 세션 버킷 관리, `DISCONNECT` 시 자동 정리
+  - 한도 초과 시 `preSend()` → `null` 반환으로 메시지 드롭, `WARN` 로그 기록
+  - `WebSocketConfig.configureClientInboundChannel()`: `chatRateLimitInterceptor` 등록 (`stompLogInterceptor` 뒤에 체이닝)
 
 ---
 
@@ -153,9 +165,9 @@
 | 5 | M-1 DTO 검증 | [x] | 게임 로직 안정성 |
 | 6 | M-3 예외 정보 노출 | [x] | 로그·응답 구조 정비 |
 | 7 | L-1 로그 인젝션 | [x] | H-4 수정 시 동시 처리 |
-| 8 | L-2 null 안전성 | [ ] | 크래시 방지 |
+| 8 | L-2 null 안전성 | [x] | 크래시 방지 |
 | 9 | H-1 CORS | [ ] | 배포 도메인 확정 후 |
 | 10 | H-2 인증/인가 | [ ] | 설계 논의 필요 |
-| 11 | L-3 레이트 리밋 | [ ] | 운영 단계에서 |
+| 11 | L-3 레이트 리밋 | [x] | 운영 단계에서 |
 | 12 | L-4 턴 검증 | [ ] | 게임 로직 구현 완료 후 |
 | 13 | L-5 CSRF | [ ] | H-1, H-2 해결 후 |
