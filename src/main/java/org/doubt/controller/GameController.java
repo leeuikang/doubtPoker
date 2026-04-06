@@ -10,6 +10,7 @@ import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
+import java.util.Map;
 import java.util.Objects;
 
 @Controller
@@ -20,21 +21,37 @@ public class GameController {
 
     @MessageMapping("/game/bet")
     public void processBat(GameMessage message, SimpMessageHeaderAccessor headerAccessor) {
-        String sessionRoomId = (String) Objects.requireNonNull(headerAccessor.getSessionAttributes()).get("roomId");
+        Map<String, Object> attrs = Objects.requireNonNull(headerAccessor.getSessionAttributes());
+
+        String sessionRoomId = (String) attrs.get("roomId");
         if (sessionRoomId == null || !sessionRoomId.equals(message.roomId())) {
             throw new GameException(ErrorCode.NOT_IN_ROOM);
         }
-        messagingTemplate.convertAndSend("/topic/room/" + message.roomId(), message);
+
+        // 브로드캐스트 sender를 세션 검증 nickname으로 교체 (사칭 차단)
+        String nickname = (String) attrs.get("nickname");
+        if (nickname == null) throw new GameException(ErrorCode.UNAUTHORIZED);
+
+        GameMessage verified = new GameMessage(message.type(), message.roomId(), nickname, message.payload());
+        messagingTemplate.convertAndSend("/topic/room/" + message.roomId(), verified);
     }
 
     @MessageMapping("/game/join")
-    public void processJoinRoom(GameMessage message, SimpMessageHeaderAccessor headerAccessor){
-        Objects.requireNonNull(headerAccessor.getSessionAttributes()).put("roomId", message.roomId());
-        Objects.requireNonNull(headerAccessor.getSessionAttributes()).put("userName", message.sender());
+    public void processJoinRoom(GameMessage message, SimpMessageHeaderAccessor headerAccessor) {
+        Map<String, Object> attrs = Objects.requireNonNull(headerAccessor.getSessionAttributes());
 
-        sessionManager.addUserToRoom(message.roomId(), message.sender());
+        // CONNECT 시 StompAuthInterceptor가 저장한 검증된 identity 사용 (사칭 차단)
+        String nickname = (String) attrs.get("nickname");
+        if (nickname == null) throw new GameException(ErrorCode.UNAUTHORIZED);
 
-        messagingTemplate.convertAndSend("/topic/room/" + message.roomId(), message);
+        attrs.put("roomId", message.roomId());
+        attrs.put("userName", nickname);
+
+        sessionManager.addUserToRoom(message.roomId(), nickname);
+
+        // 브로드캐스트 메시지의 sender도 검증된 nickname으로 교체
+        GameMessage verified = new GameMessage(message.type(), message.roomId(), nickname, message.payload());
+        messagingTemplate.convertAndSend("/topic/room/" + message.roomId(), verified);
     }
 
 }

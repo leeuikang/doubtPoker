@@ -24,6 +24,10 @@ public enum ErrorCode {
     CANNOT_STOP("스탑 선언 조건을 충족하지 않습니다."),
     CANNOT_DOUBT("지목할 수 없는 상태입니다."),
     CANNOT_GOING_OUT("거짓말 카드가 남아있으면 게임을 종료할 수 없습니다."),
+    // 인증/인가
+    UNAUTHORIZED("인증이 필요합니다."),
+    TOKEN_EXPIRED("토큰이 만료되었습니다."),
+    TOKEN_INVALID("유효하지 않은 토큰입니다."),
     // 서버
     INTERNAL_SERVER_ERROR("서버 에러입니다.");
 

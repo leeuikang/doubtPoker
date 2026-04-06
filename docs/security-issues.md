@@ -15,11 +15,20 @@
 
 ---
 
-### H-2 인증/인가 없음 [ ]
+### H-2 인증/인가 없음 [x]
 - **파일**: `src/main/java/org/doubt/config/WebSocketConfig.java`, `src/main/java/org/doubt/controller/GameController.java`
 - **내용**: 누구나 임의의 이름으로 방 입장 및 타 플레이어 사칭 가능
 - **영향**: 게임 상태 무단 조작, 플레이어 사칭
 - **수정 방향**: STOMP CONNECT 시 토큰 검증 (`ChannelInterceptor` 활용)
+- **수정 내용**:
+  - `POST /auth/guest`: Guest 토큰 발급 엔드포인트 — HMAC-SHA256 서명, 만료 1시간
+  - `GuestTokenService`: 외부 라이브러리 없이 `javax.crypto.Mac`으로 토큰 발급/검증
+  - `StompAuthInterceptor`: CONNECT 시 `Authorization: Bearer` 헤더 검증 → 세션에 `guestId`, `nickname` 저장
+  - `AuthStompErrorHandler`: `preSend()` 예외를 STOMP ERROR 프레임으로 변환 (`@MessageExceptionHandler` 도달 불가 문제 해결)
+  - `WebSocketConfig`: 인터셉터 순서 `StompAuth → StompLog → ChatRateLimit`, `AuthStompErrorHandler` Bean 등록
+  - `GameController.processJoinRoom()`: `message.sender()` → 세션 `nickname` 으로 교체 (사칭 차단)
+  - `GameController.processBat()`: 브로드캐스트 sender도 세션 `nickname` 으로 교체
+  - `api-spec.md`: 인증 단계(POST /auth/guest, CONNECT 헤더) 문서 추가
 
 ---
 
@@ -170,7 +179,7 @@
 | 7 | L-1 로그 인젝션 | [x] | H-4 수정 시 동시 처리 |
 | 8 | L-2 null 안전성 | [x] | 크래시 방지 |
 | 9 | H-1 CORS | [ ] | 배포 도메인 확정 후 |
-| 10 | H-2 인증/인가 | [ ] | 설계 논의 필요 |
+| 10 | H-2 인증/인가 | [x] | 설계 논의 필요 |
 | 11 | L-3 레이트 리밋 | [x] | 운영 단계에서 |
 | 12 | L-4 턴 검증 | [ ] | 게임 로직 구현 완료 후 |
 | 13 | L-5 CSRF | [ ] | H-1, H-2 해결 후 |

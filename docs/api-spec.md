@@ -1,10 +1,36 @@
 # WebSocket API 명세
 
+## 인증 (H-2)
+
+WebSocket 연결 전 Guest 토큰을 발급받아야 한다.
+
+### POST /auth/guest
+
+**요청**
+```json
+{ "nickname": "홍길동" }
+```
+- `nickname`: 1~20자, 필수
+
+**응답**
+```json
+{ "token": "<token>", "guestId": "<uuid>", "nickname": "홍길동" }
+```
+- 토큰 유효 시간: 1시간
+
+**STOMP CONNECT 헤더**
+```
+Authorization: Bearer <token>
+```
+인증 실패 시 서버는 STOMP ERROR 프레임을 전송하고 연결을 종료한다.
+
+---
+
 ## 연결 엔드포인트
 
 - **URL**: `/websocket`
 - **프로토콜**: STOMP over WebSocket (SockJS 폴백 지원)
-- **CORS**: 전체 허용
+- **CORS**: 전체 허용 (배포 시 도메인 제한 예정)
 
 ## 클라이언트 → 서버 (Publish)
 
