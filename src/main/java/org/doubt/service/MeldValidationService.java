@@ -50,7 +50,7 @@ public class MeldValidationService {
      * @param declaredCards 붙이려는 선언 카드
      */
     public boolean canExtend(Meld existingMeld, List<Card> actualCards, List<DeclaredCard> declaredCards) {
-        if (actualCards == null || declaredCards == null) return false;
+        if (existingMeld == null || actualCards == null || declaredCards == null) return false;
         if (actualCards.size() != declaredCards.size() || actualCards.isEmpty()) return false;
 
         // 확장 카드는 실제 카드와 선언 카드가 일치해야 함 (확장에는 거짓말 불가)
@@ -142,6 +142,7 @@ public class MeldValidationService {
     /** SET 확장: 같은 숫자, 합산 최대 4장 */
     private boolean canExtendSet(Meld existingMeld, List<DeclaredCard> newDeclared) {
         List<DeclaredCard> existing = existingMeld.getDeclaredCards();
+        if (existing == null || existing.isEmpty()) return false;
         int newTotal = existing.size() + newDeclared.size();
         if (newTotal > 4) return false;
 
@@ -152,6 +153,7 @@ public class MeldValidationService {
     /** STRAIGHT 확장: 같은 무늬, 기존 + 신규 선언 카드가 연속 수열 유지 */
     private boolean canExtendStraight(Meld existingMeld, List<DeclaredCard> newDeclared) {
         List<DeclaredCard> existing = existingMeld.getDeclaredCards();
+        if (existing == null || existing.isEmpty()) return false;
         var meldSuit = existing.get(0).declaredSuit();
 
         // 새 카드 무늬 확인
