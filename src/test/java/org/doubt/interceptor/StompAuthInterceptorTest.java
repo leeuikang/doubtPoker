@@ -2,6 +2,7 @@ package org.doubt.interceptor;
 
 import org.doubt.auth.GuestClaims;
 import org.doubt.auth.GuestTokenService;
+import org.doubt.auth.NicknameRegistry;
 import org.doubt.constant.ErrorCode;
 import org.doubt.exception.GameException;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,6 +23,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -32,13 +34,17 @@ class StompAuthInterceptorTest {
     private GuestTokenService guestTokenService;
 
     @Mock
+    private NicknameRegistry nicknameRegistry;
+
+    @Mock
     private MessageChannel messageChannel;
 
     private StompAuthInterceptor interceptor;
 
     @BeforeEach
     void setUp() {
-        interceptor = new StompAuthInterceptor(guestTokenService);
+        interceptor = new StompAuthInterceptor(guestTokenService, nicknameRegistry);
+        when(nicknameRegistry.register(any())).thenReturn(true);
     }
 
     // ----------------------------------------------------------------
@@ -127,6 +133,22 @@ class StompAuthInterceptorTest {
                     .isInstanceOf(GameException.class)
                     .satisfies(ex -> assertThat(((GameException) ex).getErrorCode())
                             .isEqualTo(ErrorCode.TOKEN_EXPIRED));
+        }
+
+        @Test
+        @DisplayName("이미 사용 중인 닉네임이면 DUPLICATE_NICKNAME 예외가 발생한다")
+        void duplicate_nickname_throws_exception() {
+            String token = "valid.token";
+            GuestClaims claims = new GuestClaims("guest-uuid", "중복닉네임");
+            when(guestTokenService.verify(token)).thenReturn(claims);
+            when(nicknameRegistry.register("중복닉네임")).thenReturn(false); // 이미 사용 중
+
+            Message<byte[]> message = buildConnectMessage("Bearer " + token);
+
+            assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                    .isInstanceOf(GameException.class)
+                    .satisfies(ex -> assertThat(((GameException) ex).getErrorCode())
+                            .isEqualTo(ErrorCode.DUPLICATE_NICKNAME));
         }
 
         @Test
