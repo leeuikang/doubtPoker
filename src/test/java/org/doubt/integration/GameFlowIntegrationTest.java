@@ -143,62 +143,56 @@ class GameFlowIntegrationTest {
     }
 
     @Nested
-    @DisplayName("BET 액션 검증")
-    class BetFlow {
+    @DisplayName("게임 액션 에러 검증")
+    class GameActionErrorFlow {
 
         @Test
-        @DisplayName("방에 입장한 클라이언트는 BET 메시지를 전송할 수 있다")
-        void joined_client_can_send_bet() throws Exception {
-            String roomId = "flow-room-3";
-            String nickname = "베팅유저";
-
-            StompSession session = connectWithNickname(nickname);
-
-            BlockingQueue<GameMessage> received = new LinkedBlockingQueue<>();
-            session.subscribe("/topic/room/" + roomId, gameMessageHandler(received));
-
-            // 먼저 방 입장 (세션에 roomId 저장)
-            session.send("/app/game/join", new GameMessage("JOIN", roomId, "ignored", null));
-            received.poll(3, TimeUnit.SECONDS); // JOIN 브로드캐스트 소비
-
-            // BET 전송
-            session.send("/app/game/bet", new GameMessage("BET", roomId, "사칭자", "somePayload"));
-
-            GameMessage betBroadcast = received.poll(5, TimeUnit.SECONDS);
-
-            assertThat(betBroadcast).isNotNull();
-            // BET도 sender가 세션 nickname으로 교체되었는지 검증
-            assertThat(betBroadcast.sender()).isEqualTo(nickname);
-            assertThat(betBroadcast.roomId()).isEqualTo(roomId);
-
-            session.disconnect();
-        }
-
-        @Test
-        @DisplayName("다른 방의 roomId로 BET을 전송하면 에러를 수신한다")
-        void bet_to_wrong_room_receives_error() throws Exception {
-            String joinedRoom = "flow-room-4";
+        @DisplayName("다른 방의 roomId로 액션을 전송하면 NOT_IN_ROOM 에러를 수신한다")
+        void action_to_wrong_room_receives_not_in_room_error() throws Exception {
+            String joinedRoom = "flow-room-3";
             String otherRoom  = "flow-room-99";
             String nickname   = "오류테스트유저";
 
             StompSession session = connectWithNickname(nickname);
 
             BlockingQueue<GameMessage> errorQueue = new LinkedBlockingQueue<>();
-            // 에러는 /queue/errors (개별 유저) 또는 /user/queue/errors 로 옴
             session.subscribe("/user/queue/errors", gameMessageHandler(errorQueue));
 
             // joinedRoom에 입장
             session.send("/app/game/join", new GameMessage("JOIN", joinedRoom, "ignored", null));
-            Thread.sleep(500); // 입장 처리 대기
+            Thread.sleep(500);
 
-            // 다른 방 roomId로 BET 시도 → NOT_IN_ROOM 에러
-            session.send("/app/game/bet", new GameMessage("BET", otherRoom, "anyone", null));
+            // 다른 방 roomId로 액션 시도 → NOT_IN_ROOM 에러
+            session.send("/app/game/action", new GameMessage("DRAW", otherRoom, nickname, null));
 
             GameMessage error = errorQueue.poll(5, TimeUnit.SECONDS);
             assertThat(error).isNotNull();
-            assertThat(error.payload()).isNotNull();
-            // 에러 payload에 NOT_IN_ROOM 메시지 포함 여부 확인
             assertThat(error.payload().toString()).contains(ErrorCode.NOT_IN_ROOM.getMessage());
+
+            session.disconnect();
+        }
+
+        @Test
+        @DisplayName("알 수 없는 액션 타입을 전송하면 INVALID_TURN_PHASE 에러를 수신한다")
+        void unknown_action_type_receives_invalid_turn_phase_error() throws Exception {
+            String roomId   = "flow-room-4";
+            String nickname = "액션오류유저";
+
+            StompSession session = connectWithNickname(nickname);
+
+            BlockingQueue<GameMessage> errorQueue = new LinkedBlockingQueue<>();
+            session.subscribe("/user/queue/errors", gameMessageHandler(errorQueue));
+
+            session.send("/app/game/join", new GameMessage("JOIN", roomId, "ignored", null));
+            Thread.sleep(500);
+
+            // 존재하지 않는 액션 타입
+            session.send("/app/game/action", new GameMessage("UNKNOWN_ACTION", roomId, nickname, null));
+
+            GameMessage error = errorQueue.poll(5, TimeUnit.SECONDS);
+            assertThat(error).isNotNull();
+            assertThat(error.payload().toString())
+                    .contains(ErrorCode.INVALID_TURN_PHASE.getMessage());
 
             session.disconnect();
         }
