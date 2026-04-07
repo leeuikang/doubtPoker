@@ -1,5 +1,6 @@
 package org.doubt.service;
 
+import org.doubt.constant.GameConstants;
 import org.doubt.constant.MeldType;
 import org.doubt.constant.Rank;
 import org.doubt.dto.Card;
@@ -78,13 +79,13 @@ public class MeldValidationService {
         if (type == MeldType.SOLO_SEVEN) {
             return countBluffs(actualCards, declaredCards) == 0;
         }
-        return countBluffs(actualCards, declaredCards) <= 1;
+        return countBluffs(actualCards, declaredCards) <= GameConstants.MAX_BLUFFS_PER_MELD;
     }
 
     // --- private 검증 헬퍼 ---
 
     private boolean isValidSoloSeven(List<Card> actualCards, List<DeclaredCard> declaredCards) {
-        if (actualCards.size() != 1) return false;
+        if (actualCards.size() != GameConstants.SOLO_SEVEN_CARD_COUNT) return false;
         // 실제 카드와 선언 카드 모두 7이어야 하며 거짓말 불가
         return actualCards.get(0).rank() == Rank.SEVEN
                 && declaredCards.get(0).declaredRank() == Rank.SEVEN
@@ -94,14 +95,14 @@ public class MeldValidationService {
     /** 선언 카드가 유효한 SET인지 확인: 같은 숫자 3~4장 */
     private boolean isValidSet(List<DeclaredCard> declaredCards) {
         int size = declaredCards.size();
-        if (size < 3 || size > 4) return false;
+        if (size < GameConstants.SET_MIN_SIZE || size > GameConstants.SET_MAX_SIZE) return false;
         Rank targetRank = declaredCards.get(0).declaredRank();
         return declaredCards.stream().allMatch(c -> c.declaredRank() == targetRank);
     }
 
     /** 선언 카드가 유효한 STRAIGHT인지 확인: 같은 무늬의 연속된 숫자 3장 이상 */
     private boolean isValidStraight(List<DeclaredCard> declaredCards) {
-        if (declaredCards.size() < 3) return false;
+        if (declaredCards.size() < GameConstants.STRAIGHT_MIN_SIZE) return false;
         // 모두 같은 무늬
         var firstSuit = declaredCards.get(0).declaredSuit();
         if (declaredCards.stream().anyMatch(c -> c.declaredSuit() != firstSuit)) return false;
@@ -122,9 +123,9 @@ public class MeldValidationService {
         if (isConsecutive(ranks)) return true;
 
         // A를 14로 취급 (A + K 조합: Q-K-A 같은 경우)
-        if (ranks.contains(1)) {
+        if (ranks.contains(Rank.ACE.getBasePoint())) {
             List<Integer> aceHigh = ranks.stream()
-                    .map(r -> r == 1 ? 14 : r)
+                    .map(r -> r == Rank.ACE.getBasePoint() ? GameConstants.ACE_HIGH_VALUE : r)
                     .sorted()
                     .collect(Collectors.toList());
             return isConsecutive(aceHigh);
@@ -144,7 +145,7 @@ public class MeldValidationService {
         List<DeclaredCard> existing = existingMeld.getDeclaredCards();
         if (existing == null || existing.isEmpty()) return false;
         int newTotal = existing.size() + newDeclared.size();
-        if (newTotal > 4) return false;
+        if (newTotal > GameConstants.SET_MAX_SIZE) return false;
 
         Rank meldRank = existing.get(0).declaredRank();
         return newDeclared.stream().allMatch(c -> c.declaredRank() == meldRank);

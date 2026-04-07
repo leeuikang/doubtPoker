@@ -56,12 +56,12 @@ public class RoundService {
      * @param firstPlayerId 선 플레이어 ID (반드시 playerIds 에 포함)
      */
     public RoundState startRound(String roomId, List<String> playerIds, String firstPlayerId) {
-        if (playerIds.size() < 2 || playerIds.size() > 5) {
+        if (playerIds.size() < GameConstants.MIN_PLAYERS || playerIds.size() > GameConstants.MAX_PLAYERS) {
             throw new GameException(ErrorCode.NOT_ENOUGH_PLAYERS);
         }
 
         List<Card> deck = deckService.createShuffledDeck();
-        Map<String, List<Card>> dealt = deckService.deal(deck, playerIds, 7);
+        Map<String, List<Card>> dealt = deckService.deal(deck, playerIds, GameConstants.INITIAL_HAND_SIZE);
 
         // 스톡 구성 및 초기 버림더미 카드 1장 세팅
         List<Card> stockPile = new ArrayList<>(dealt.get("STOCK"));
@@ -316,7 +316,7 @@ public class RoundService {
      * stockRefillCount >= 2 이면 3번째 소진 → STOCK_DEPLETED 종료.
      */
     private void refillStock(RoundState state) {
-        if (state.getStockRefillCount() >= 2) {
+        if (state.getStockRefillCount() >= GameConstants.MAX_STOCK_REFILLS) {
             state.setEndCondition(RoundEndCondition.STOCK_DEPLETED);
             log.info("[Round] STOCK_DEPLETED: 3rd stock depletion");
             return;

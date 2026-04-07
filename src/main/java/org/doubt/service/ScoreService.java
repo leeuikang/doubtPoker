@@ -1,5 +1,6 @@
 package org.doubt.service;
 
+import org.doubt.constant.GameConstants;
 import org.doubt.constant.Rank;
 import org.doubt.constant.RoundEndCondition;
 import org.doubt.dto.Card;
@@ -26,7 +27,7 @@ public class ScoreService {
     /** 핸드에 남은 카드의 총 점수 (7은 14점) */
     public int calculateHandScore(List<Card> hand) {
         return hand.stream()
-                .mapToInt(card -> card.rank() == Rank.SEVEN ? 14 : card.rank().getBasePoint())
+                .mapToInt(card -> card.rank() == Rank.SEVEN ? GameConstants.SEVEN_SCORE : card.rank().getBasePoint())
                 .sum();
     }
 
@@ -79,7 +80,7 @@ public class ScoreService {
         // max(본인 핸드점수 * 2, 다른 패배자 중 최고 조정점수)
         if (bankruptState != null) {
             int bankruptBase = calculateHandScore(bankruptState.getHand());
-            int ownDoubled = bankruptBase * 2;
+            int ownDoubled = bankruptBase * GameConstants.BANKRUPTCY_SCORE_MULTIPLIER;
             int maxOtherLoser = loserAdjustedScores.values().stream()
                     .mapToInt(Integer::intValue).max().orElse(0);
             loserAdjustedScores.put(bankruptState.getPlayerId(), Math.max(ownDoubled, maxOtherLoser));
@@ -94,7 +95,7 @@ public class ScoreService {
         // 훌라 판정: GOING_OUT이고 승자 중 이번 라운드에 멜드를 전혀 안 낸 경우
         boolean isHula = endCondition == RoundEndCondition.GOING_OUT && winnerIds.stream()
                 .anyMatch(id -> !playerStates.get(id).isHasEverMelded());
-        int winnerTotal = isHula ? totalLoserScore * 4 : totalLoserScore;
+        int winnerTotal = isHula ? totalLoserScore * GameConstants.HULA_MULTIPLIER : totalLoserScore;
 
         // 공동 승자면 균등 분배 (나머지 버림)
         if (!winnerIds.isEmpty()) {
