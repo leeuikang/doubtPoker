@@ -1,10 +1,25 @@
 package org.doubt.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.doubt.constant.DrawSource;
 import org.doubt.constant.ErrorCode;
+import org.doubt.constant.GameAction;
+import org.doubt.constant.GameStatus;
+import org.doubt.constant.PlayerStatus;
+import org.doubt.constant.Rank;
+import org.doubt.constant.RoundEndCondition;
+import org.doubt.constant.Suit;
+import org.doubt.constant.TurnPhase;
+import org.doubt.dto.Card;
 import org.doubt.dto.GameMessage;
+import org.doubt.dto.PlayerRoundState;
+import org.doubt.dto.PokerRoom;
+import org.doubt.dto.RoundState;
+import org.doubt.dto.request.DrawRequest;
 import org.doubt.exception.GameException;
 import org.doubt.handler.SessionManager;
-import org.junit.jupiter.api.BeforeEach;
+import org.doubt.repository.PokerRoomRepository;
+import org.doubt.service.RoundService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -16,18 +31,27 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
- * GameController 단위 테스트
- * - processBat() 보안 수정(M-4): 세션 roomId 검증 로직
- * - processJoinRoom() 인증(H-2): 세션 nickname 사용 및 UNAUTHORIZED 처리
+ * GameController unit tests
+ * - processJoinRoom(): session nickname auth (H-2)
+ * - processAction()  : turn action routing, error guards, round-end broadcast
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("GameController")
@@ -39,12 +63,21 @@ class GameControllerTest {
     @Mock
     private SessionManager sessionManager;
 
+    @Mock
+    private RoundService roundService;
+
+    @Mock
+    private PokerRoomRepository pokerRoomRepository;
+
+    @Mock
+    private ObjectMapper objectMapper;
+
     @InjectMocks
     private GameController gameController;
 
-    private SimpMessageHeaderAccessor headerAccessorWithRoom(String roomId) {
-        return headerAccessorWithRoomAndNickname(roomId, "player1");
-    }
+    // ----------------------------------------------------------------
+    // Session accessor helpers
+    // ----------------------------------------------------------------
 
     private SimpMessageHeaderAccessor headerAccessorWithRoomAndNickname(String roomId, String nickname) {
         SimpMessageHeaderAccessor accessor = mock(SimpMessageHeaderAccessor.class);
@@ -61,107 +94,40 @@ class GameControllerTest {
         return accessor;
     }
 
-    @Nested
-    @DisplayName("processBat")
-    class ProcessBat {
+    // ----------------------------------------------------------------
+    // RoundState / PokerRoom helpers
+    // ----------------------------------------------------------------
 
-        @Test
-        @DisplayName("세션 roomId와 메시지 roomId가 일치하면 올바른 토픽으로 메시지를 1회 전송한다 (sender는 세션 nickname)")
-        void success_when_session_roomId_matches_message_roomId() {
-            String roomId = "room-1";
-            String nickname = "player1";
-            GameMessage message = new GameMessage("BET", roomId, "imposter", null);
-            SimpMessageHeaderAccessor accessor = headerAccessorWithRoomAndNickname(roomId, nickname);
+    private RoundState buildActiveState() {
+        RoundState state = new RoundState();
+        state.setTurnPhase(TurnPhase.DRAW);
+        state.setEndCondition(null);
+        state.setStockPile(new ArrayList<>());
+        state.setDiscardPile(new ArrayList<>());
+        state.setTableMelds(new ArrayList<>());
 
-            ArgumentCaptor<GameMessage> captor = ArgumentCaptor.forClass(GameMessage.class);
-            gameController.processBat(message, accessor);
+        PlayerRoundState ps = new PlayerRoundState();
+        ps.setPlayerId("player1");
+        ps.setHand(new ArrayList<>(List.of(new Card(Suit.SPADE, Rank.ACE))));
+        ps.setStatus(PlayerStatus.ACTIVE);
 
-            verify(messagingTemplate, times(1))
-                    .convertAndSend(eq("/topic/room/" + roomId), captor.capture());
-            assertThat(captor.getValue().sender()).isEqualTo(nickname);
-        }
-
-        @Test
-        @DisplayName("세션에 roomId가 없으면 NOT_IN_ROOM 예외가 발생한다")
-        void fail_when_session_roomId_is_null() {
-            GameMessage message = new GameMessage("BET", "room-1", "player1", null);
-            SimpMessageHeaderAccessor accessor = headerAccessorEmpty();
-
-            assertThatThrownBy(() -> gameController.processBat(message, accessor))
-                    .isInstanceOf(GameException.class)
-                    .satisfies(ex -> {
-                        GameException gameException = (GameException) ex;
-                        assertThat(gameException.getErrorCode()).isEqualTo(ErrorCode.NOT_IN_ROOM);
-                        assertThat(gameException.getMessage())
-                                .isEqualTo(ErrorCode.NOT_IN_ROOM.getMessage());
-                    });
-        }
-
-        @Test
-        @DisplayName("세션 roomId와 메시지 roomId가 다르면 NOT_IN_ROOM 예외가 발생한다")
-        void fail_when_session_roomId_differs_from_message_roomId() {
-            GameMessage message = new GameMessage("BET", "room-2", "player1", null);
-            SimpMessageHeaderAccessor accessor = headerAccessorWithRoom("room-1");
-
-            assertThatThrownBy(() -> gameController.processBat(message, accessor))
-                    .isInstanceOf(GameException.class)
-                    .satisfies(ex -> {
-                        GameException gameException = (GameException) ex;
-                        assertThat(gameException.getErrorCode()).isEqualTo(ErrorCode.NOT_IN_ROOM);
-                    });
-        }
-
-        @Test
-        @DisplayName("예외 발생 시 convertAndSend가 호출되지 않는다")
-        void does_not_send_message_when_exception_thrown() {
-            GameMessage message = new GameMessage("BET", "room-2", "player1", null);
-            SimpMessageHeaderAccessor accessor = headerAccessorWithRoom("room-1");
-
-            assertThatThrownBy(() -> gameController.processBat(message, accessor))
-                    .isInstanceOf(GameException.class);
-
-            verify(messagingTemplate, never()).convertAndSend(anyString(), (Object) any());
-        }
-
-        @Test
-        @DisplayName("전송 토픽이 /topic/room/{roomId} 형태이다 (이전 버그: message.getClass() 사용)")
-        void topic_path_uses_roomId_not_getClass() {
-            String roomId = "room-abc";
-            GameMessage message = new GameMessage("BET", roomId, "player1", null);
-            SimpMessageHeaderAccessor accessor = headerAccessorWithRoom(roomId);
-
-            gameController.processBat(message, accessor);
-
-            verify(messagingTemplate).convertAndSend(eq("/topic/room/" + roomId), any(GameMessage.class));
-            verify(messagingTemplate, never())
-                    .convertAndSend(contains("GameMessage"), (Object) any());
-        }
-
-        @Test
-        @DisplayName("NOT_IN_ROOM 예외 메시지가 '방에 참여중이 아닙니다.'이다")
-        void not_in_room_exception_message_is_correct() {
-            GameMessage message = new GameMessage("BET", "room-1", "player1", null);
-            SimpMessageHeaderAccessor accessor = headerAccessorEmpty();
-
-            assertThatThrownBy(() -> gameController.processBat(message, accessor))
-                    .isInstanceOf(GameException.class)
-                    .hasMessage("방에 참여중이 아닙니다.");
-        }
-
-        @Test
-        @DisplayName("roomId는 일치하지만 세션에 nickname이 없으면 UNAUTHORIZED 예외가 발생한다")
-        void fail_when_nickname_missing_from_session() {
-            String roomId = "room-1";
-            GameMessage message = new GameMessage("BET", roomId, "player1", null);
-            // roomId는 있지만 nickname은 없는 세션
-            SimpMessageHeaderAccessor accessor = headerAccessorWithRoomAndNickname(roomId, null);
-
-            assertThatThrownBy(() -> gameController.processBat(message, accessor))
-                    .isInstanceOf(GameException.class)
-                    .satisfies(ex -> assertThat(((GameException) ex).getErrorCode())
-                            .isEqualTo(ErrorCode.UNAUTHORIZED));
-        }
+        Map<String, PlayerRoundState> playerStates = new HashMap<>();
+        playerStates.put("player1", ps);
+        state.setPlayerStates(playerStates);
+        state.setTurnOrder(List.of("player1"));
+        state.setCurrentPlayerIndex(0);
+        return state;
     }
+
+    private PokerRoom buildRoom(String roomId, RoundState roundState) {
+        PokerRoom room = new PokerRoom(roomId, "Test Room");
+        room.setRoundState(roundState);
+        return room;
+    }
+
+    // ----------------------------------------------------------------
+    // processJoinRoom
+    // ----------------------------------------------------------------
 
     @Nested
     @DisplayName("processJoinRoom")
@@ -178,7 +144,7 @@ class GameControllerTest {
         }
 
         @Test
-        @DisplayName("세션에 nickname이 있으면 sessionManager.addUserToRoom이 세션 닉네임으로 호출된다")
+        @DisplayName("Nickname present — sessionManager.addUserToRoom called with session nickname, not message sender")
         void session_nickname_is_used_for_addUserToRoom_not_message_sender() {
             String sessionNickname = "검증된닉네임";
             String messageSender = "사칭자";
@@ -193,7 +159,7 @@ class GameControllerTest {
         }
 
         @Test
-        @DisplayName("브로드캐스트 GameMessage의 sender는 세션 nickname이고 message.sender()가 아니다")
+        @DisplayName("Broadcast GameMessage sender is replaced with session nickname")
         void broadcast_sender_is_replaced_with_session_nickname() {
             String sessionNickname = "검증된닉네임";
             String messageSender = "사칭자";
@@ -212,7 +178,7 @@ class GameControllerTest {
         }
 
         @Test
-        @DisplayName("세션에 nickname이 없으면 UNAUTHORIZED 예외가 발생한다")
+        @DisplayName("No nickname in session — UNAUTHORIZED exception, no side effects")
         void null_nickname_in_session_throws_unauthorized() {
             GameMessage message = new GameMessage("JOIN", "room-1", "anyone", null);
             SimpMessageHeaderAccessor accessor = headerAccessorWithNickname(null);
@@ -227,7 +193,7 @@ class GameControllerTest {
         }
 
         @Test
-        @DisplayName("정상 처리 후 세션 attrs에 roomId와 userName이 올바르게 저장된다")
+        @DisplayName("After join, session attrs contain roomId and userName")
         void session_attrs_are_updated_with_roomId_and_userName() {
             String sessionNickname = "홍길동";
             String roomId = "room-99";
@@ -245,7 +211,7 @@ class GameControllerTest {
         }
 
         @Test
-        @DisplayName("UNAUTHORIZED 예외 메시지가 '인증이 필요합니다.'이다")
+        @DisplayName("UNAUTHORIZED exception message is '인증이 필요합니다.'")
         void unauthorized_exception_message_is_correct() {
             GameMessage message = new GameMessage("JOIN", "room-1", "anyone", null);
             SimpMessageHeaderAccessor accessor = headerAccessorWithNickname(null);
@@ -253,6 +219,192 @@ class GameControllerTest {
             assertThatThrownBy(() -> gameController.processJoinRoom(message, accessor))
                     .isInstanceOf(GameException.class)
                     .hasMessage("인증이 필요합니다.");
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // processAction
+    // ----------------------------------------------------------------
+
+    @Nested
+    @DisplayName("processAction")
+    class ProcessAction {
+
+        private final String ROOM_ID = "room-action";
+        private final String NICKNAME = "player1";
+
+        /** Accessor with session roomId == message roomId and nickname set. */
+        private SimpMessageHeaderAccessor validAccessor() {
+            return headerAccessorWithRoomAndNickname(ROOM_ID, NICKNAME);
+        }
+
+        @Test
+        @DisplayName("No nickname in session — UNAUTHORIZED exception")
+        void throwsUnauthorizedWhenNoNickname() {
+            GameMessage message = new GameMessage("DRAW", ROOM_ID, NICKNAME, null);
+            SimpMessageHeaderAccessor accessor = headerAccessorEmpty();
+
+            assertThatThrownBy(() -> gameController.processAction(message, accessor))
+                    .isInstanceOf(GameException.class)
+                    .satisfies(ex -> assertThat(((GameException) ex).getErrorCode())
+                            .isEqualTo(ErrorCode.UNAUTHORIZED));
+        }
+
+        @Test
+        @DisplayName("Session roomId does not match message roomId — NOT_IN_ROOM exception")
+        void throwsNotInRoomWhenRoomIdMismatch() {
+            GameMessage message = new GameMessage("DRAW", "other-room", NICKNAME, null);
+            SimpMessageHeaderAccessor accessor = headerAccessorWithRoomAndNickname(ROOM_ID, NICKNAME);
+
+            assertThatThrownBy(() -> gameController.processAction(message, accessor))
+                    .isInstanceOf(GameException.class)
+                    .satisfies(ex -> assertThat(((GameException) ex).getErrorCode())
+                            .isEqualTo(ErrorCode.NOT_IN_ROOM));
+        }
+
+        @Test
+        @DisplayName("Room not found in repository — ROOM_NOT_FOUND exception")
+        void throwsRoomNotFound() {
+            // parseAction succeeds (DRAW is valid), then findRoom is called
+            GameMessage message = new GameMessage("DRAW", ROOM_ID, NICKNAME, null);
+            when(pokerRoomRepository.findById(ROOM_ID)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> gameController.processAction(message, validAccessor()))
+                    .isInstanceOf(GameException.class)
+                    .satisfies(ex -> assertThat(((GameException) ex).getErrorCode())
+                            .isEqualTo(ErrorCode.ROOM_NOT_FOUND));
+        }
+
+        @Test
+        @DisplayName("Room has null roundState — INVALID_TURN_PHASE exception")
+        void throwsInvalidTurnPhaseWhenRoundStateNull() {
+            PokerRoom room = buildRoom(ROOM_ID, null);
+            when(pokerRoomRepository.findById(ROOM_ID)).thenReturn(Optional.of(room));
+
+            GameMessage message = new GameMessage("DRAW", ROOM_ID, NICKNAME, null);
+
+            assertThatThrownBy(() -> gameController.processAction(message, validAccessor()))
+                    .isInstanceOf(GameException.class)
+                    .satisfies(ex -> assertThat(((GameException) ex).getErrorCode())
+                            .isEqualTo(ErrorCode.INVALID_TURN_PHASE));
+        }
+
+        @Test
+        @DisplayName("Round already ended (endCondition != null) — INVALID_TURN_PHASE exception")
+        void throwsInvalidTurnPhaseWhenRoundAlreadyEnded() {
+            RoundState endedState = buildActiveState();
+            endedState.setEndCondition(RoundEndCondition.GOING_OUT);
+            PokerRoom room = buildRoom(ROOM_ID, endedState);
+            when(pokerRoomRepository.findById(ROOM_ID)).thenReturn(Optional.of(room));
+
+            GameMessage message = new GameMessage("DRAW", ROOM_ID, NICKNAME, null);
+
+            assertThatThrownBy(() -> gameController.processAction(message, validAccessor()))
+                    .isInstanceOf(GameException.class)
+                    .satisfies(ex -> assertThat(((GameException) ex).getErrorCode())
+                            .isEqualTo(ErrorCode.INVALID_TURN_PHASE));
+        }
+
+        @Test
+        @DisplayName("GameAction.READY is not a turn action — INVALID_TURN_PHASE exception")
+        void throwsInvalidTurnPhaseForReadyAction() {
+            // READY is a valid GameAction enum value, so parseAction succeeds,
+            // but route() falls through to the default case and throws.
+            RoundState activeState = buildActiveState();
+            PokerRoom room = buildRoom(ROOM_ID, activeState);
+            when(pokerRoomRepository.findById(ROOM_ID)).thenReturn(Optional.of(room));
+
+            GameMessage message = new GameMessage(GameAction.READY.name(), ROOM_ID, NICKNAME, null);
+
+            assertThatThrownBy(() -> gameController.processAction(message, validAccessor()))
+                    .isInstanceOf(GameException.class)
+                    .satisfies(ex -> assertThat(((GameException) ex).getErrorCode())
+                            .isEqualTo(ErrorCode.INVALID_TURN_PHASE));
+        }
+
+        @Test
+        @DisplayName("Unknown action type string — INVALID_TURN_PHASE exception (parseAction fails before findRoom)")
+        void throwsInvalidTurnPhaseForUnknownActionType() {
+            // "UNKNOWN_ACTION" is not a GameAction enum constant, so parseAction()
+            // throws immediately — pokerRoomRepository is never consulted.
+            GameMessage message = new GameMessage("UNKNOWN_ACTION", ROOM_ID, NICKNAME, null);
+
+            assertThatThrownBy(() -> gameController.processAction(message, validAccessor()))
+                    .isInstanceOf(GameException.class)
+                    .satisfies(ex -> assertThat(((GameException) ex).getErrorCode())
+                            .isEqualTo(ErrorCode.INVALID_TURN_PHASE));
+        }
+
+        @Test
+        @DisplayName("DRAW action — handleDraw called, updated state broadcast to /topic/room/{roomId}")
+        void routesDrawActionToRoundService() {
+            RoundState activeState = buildActiveState();
+            PokerRoom room = buildRoom(ROOM_ID, activeState);
+            when(pokerRoomRepository.findById(ROOM_ID)).thenReturn(Optional.of(room));
+
+            RoundState updatedState = buildActiveState();
+            updatedState.setTurnPhase(TurnPhase.ACTION);
+
+            when(objectMapper.convertValue(any(), eq(DrawRequest.class)))
+                    .thenReturn(new DrawRequest(DrawSource.STOCK));
+            when(roundService.handleDraw(eq(activeState), eq(NICKNAME), any(DrawRequest.class)))
+                    .thenReturn(updatedState);
+
+            GameMessage message = new GameMessage(GameAction.DRAW.name(), ROOM_ID, NICKNAME, null);
+
+            gameController.processAction(message, validAccessor());
+
+            verify(roundService, times(1)).handleDraw(eq(activeState), eq(NICKNAME), any(DrawRequest.class));
+
+            ArgumentCaptor<GameMessage> broadcastCaptor = ArgumentCaptor.forClass(GameMessage.class);
+            verify(messagingTemplate, times(1))
+                    .convertAndSend(eq("/topic/room/" + ROOM_ID), broadcastCaptor.capture());
+
+            GameMessage broadcast = broadcastCaptor.getValue();
+            assertThat(broadcast.roomId()).isEqualTo(ROOM_ID);
+            assertThat(broadcast.sender()).isEqualTo(NICKNAME);
+            assertThat(broadcast.payload()).isSameAs(updatedState);
+        }
+
+        @Test
+        @DisplayName("After action, endCondition is set — resolveRound called and ROUND_END broadcast sent")
+        void broadcastsRoundEndWhenConditionSet() {
+            RoundState activeState = buildActiveState();
+            PokerRoom room = buildRoom(ROOM_ID, activeState);
+            when(pokerRoomRepository.findById(ROOM_ID)).thenReturn(Optional.of(room));
+
+            // Updated state with endCondition set (round ends after the action)
+            RoundState endedState = buildActiveState();
+            endedState.setEndCondition(RoundEndCondition.GOING_OUT);
+
+            when(objectMapper.convertValue(any(), eq(DrawRequest.class)))
+                    .thenReturn(new DrawRequest(DrawSource.STOCK));
+            when(roundService.handleDraw(eq(activeState), eq(NICKNAME), any(DrawRequest.class)))
+                    .thenReturn(endedState);
+
+            Map<String, Integer> scoreDelta = Map.of(NICKNAME, 5);
+            when(roundService.resolveRound(endedState)).thenReturn(scoreDelta);
+
+            GameMessage message = new GameMessage(GameAction.DRAW.name(), ROOM_ID, NICKNAME, null);
+
+            gameController.processAction(message, validAccessor());
+
+            // resolveRound must be called exactly once with the ended state
+            verify(roundService, times(1)).resolveRound(endedState);
+
+            // Room status updated to ROUND_END
+            assertThat(room.getStatus()).isEqualTo(GameStatus.ROUND_END);
+
+            // Two broadcasts: one for the action result, one for ROUND_END
+            ArgumentCaptor<GameMessage> broadcastCaptor = ArgumentCaptor.forClass(GameMessage.class);
+            verify(messagingTemplate, times(2))
+                    .convertAndSend(eq("/topic/room/" + ROOM_ID), broadcastCaptor.capture());
+
+            List<GameMessage> broadcasts = broadcastCaptor.getAllValues();
+            GameMessage roundEndBroadcast = broadcasts.get(1);
+            assertThat(roundEndBroadcast.type()).isEqualTo("ROUND_END");
+            assertThat(roundEndBroadcast.sender()).isEqualTo("SYSTEM");
+            assertThat(roundEndBroadcast.payload()).isSameAs(scoreDelta);
         }
     }
 }

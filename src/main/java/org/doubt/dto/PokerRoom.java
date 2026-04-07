@@ -19,6 +19,7 @@ public class PokerRoom {
     private int currentIndex;
     private int totalPot;
     private LocalDateTime lastActivityTime;
+    private RoundState roundState;
 
     public PokerRoom(String roomId, String roomName) {
         this.roomId = roomId;
