@@ -12,7 +12,7 @@
 - [V] 5. `RoundService` - 드로우 — `handleDraw`: 스톡/버림더미 처리, 스톡 소진 시 재구성(최대 2회)
 - [V] 6. `RoundService` - 멜드/확장 — `handleMeld`, `handleExtend`: `MeldValidationService` 연동
 - [V] 7. `RoundService` - 버리기 — `handleDiscard`: 버림더미 push, 땡큐 타이머 5초 트리거
-- [ ] 8. `RoundService` - 특수 선언 — `handleThankYou`, `handleStop`, `handleDoubt`, `handleRevealBluff`
+- [V] 8. `RoundService` - 특수 선언 — `handleThankYou`, `handleStop`, `handleDoubt`, `handleRevealBluff`
 - [ ] 9. `RoundService` - 종료 조건 — 고잉아웃·스탑·스톡소진·파산 감지 → `ScoreService` 연동
 
 ## 3단계 — 부가 기능 (2단계 의존)

@@ -282,24 +282,140 @@ public class RoundService {
         return state;
     }
 
-    /** 땡큐 선언 처리 */
+    /**
+     * 땡큐 선언 처리
+     *
+     * <p>ruleBook §5.5: 버림더미에 카드가 버려진 뒤 5초(또는 라운드 시작 10초) 이내에
+     * 누구나 선언 가능. 선언자가 버림더미 상단 카드를 가져와 ACTION 단계를 진행하며,
+     * 원래 턴 순서(다음 플레이어)는 건너뛴다.</p>
+     */
     public RoundState handleThankYou(RoundState state, String playerId) {
-        return null;
+        if (state.getThankYouTimerSec() <= 0) {
+            throw new GameException(ErrorCode.INVALID_TURN_PHASE);
+        }
+        PlayerRoundState playerState = state.getPlayerStates().get(playerId);
+        if (playerState == null || playerState.getStatus() != PlayerStatus.ACTIVE) {
+            throw new GameException(ErrorCode.INVALID_TURN);
+        }
+        if (state.getDiscardPile().isEmpty()) {
+            throw new GameException(ErrorCode.INVALID_CARD);
+        }
+
+        // 버림더미 상단 카드 가져오기
+        Card taken = state.getDiscardPile().remove(state.getDiscardPile().size() - 1);
+        playerState.getHand().add(taken);
+
+        // 선언자를 현재 플레이어로 전환 (원래 다음 플레이어 턴은 건너뜀)
+        int playerIndex = state.getTurnOrder().indexOf(playerId);
+        if (playerIndex < 0) {
+            throw new GameException(ErrorCode.INVALID_TURN);
+        }
+        playerState.setHasMeldedThisTurn(false);
+        state.setCurrentPlayerIndex(playerIndex);
+        state.setTurnPhase(TurnPhase.ACTION);
+        state.setThankYouTimerSec(0);
+        state.setLastDoubtableMeldId(null);
+
+        log.info("[Round] THANK_YOU playerId={}", playerId);
+        return state;
     }
 
-    /** 스탑 선언 처리 */
+    /**
+     * 스탑 선언 처리
+     *
+     * <p>ruleBook §8.1: 턴 시작(DRAW 전) 핸드 점수가 {STOP_SCORE_THRESHOLD}점 이하일 때만 선언 가능.
+     * 모든 플레이어 핸드 공개 후 최저점 보유자 승리.</p>
+     */
     public RoundState handleStop(RoundState state, String playerId, StopRequest request) {
-        return null;
+        validateCurrentPlayer(state, playerId);
+        validatePhase(state, TurnPhase.DRAW);
+
+        PlayerRoundState playerState = state.getPlayerStates().get(playerId);
+        int handScore = scoreService.calculateHandScore(playerState.getHand());
+        if (handScore > GameConstants.STOP_SCORE_THRESHOLD) {
+            throw new GameException(ErrorCode.CANNOT_STOP);
+        }
+
+        playerState.setHasDeclaredStop(true);
+        state.setEndCondition(RoundEndCondition.STOP);
+        log.info("[Round] STOP declared playerId={} score={}", playerId, handScore);
+        return state;
     }
 
-    /** 거짓말 지목 처리 */
+    /**
+     * 거짓말 지목 처리
+     *
+     * <p>ruleBook §7: 자신의 턴 ACTION 단계에서 직전 멜드({@code lastDoubtableMeldId})만 지목 가능.</p>
+     * <ul>
+     *   <li>성공: 멜드 소유자가 actualCards 회수, 각 확장자가 extension 카드 회수,
+     *       소유자 스톡에서 1장 드로우, 멜드 제거</li>
+     *   <li>실패: 지목자가 스톡에서 1장 드로우</li>
+     * </ul>
+     */
     public RoundState handleDoubt(RoundState state, String playerId, DoubtRequest request) {
-        return null;
+        validateCurrentPlayer(state, playerId);
+        validatePhase(state, TurnPhase.ACTION);
+
+        if (state.getLastDoubtableMeldId() == null
+                || !state.getLastDoubtableMeldId().equals(request.meldId())) {
+            throw new GameException(ErrorCode.CANNOT_DOUBT);
+        }
+
+        Meld meld = findMeldById(state, request.meldId());
+        state.setLastDoubtableMeldId(null); // 지목 소진
+
+        if (meld.isBluff()) {
+            // 성공: 소유자 카드 회수 + 확장자 카드 회수 + 소유자 1장 드로우
+            state.getPlayerStates().get(meld.getOwnerId()).getHand().addAll(meld.getActualCards());
+            meld.getExtensions().forEach((extenderId, cards) ->
+                    state.getPlayerStates().get(extenderId).getHand().addAll(cards));
+            state.getTableMelds().remove(meld);
+            drawOneFromStock(state, meld.getOwnerId());
+            log.info("[Round] DOUBT success meldId={} owner={}", meld.getId(), meld.getOwnerId());
+        } else {
+            // 실패: 지목자 1장 드로우
+            drawOneFromStock(state, playerId);
+            log.info("[Round] DOUBT failure meldId={} doubter={}", meld.getId(), playerId);
+        }
+
+        return state;
     }
 
-    /** 거짓말 자진 공개 처리 */
+    /**
+     * 거짓말 자진 공개 처리
+     *
+     * <p>ruleBook §7: 본인 턴에 자신이 낸 거짓말 멜드를 공개 가능.
+     * 소유자가 카드를 회수하고, 확장자 각 1장 드로우 패널티.</p>
+     */
     public RoundState handleRevealBluff(RoundState state, String playerId, RevealBluffRequest request) {
-        return null;
+        validateCurrentPlayer(state, playerId);
+        validatePhase(state, TurnPhase.ACTION);
+
+        Meld meld = findMeldById(state, request.meldId());
+
+        if (!meld.getOwnerId().equals(playerId)) {
+            throw new GameException(ErrorCode.INVALID_MELD);
+        }
+        if (!meld.isBluff()) {
+            throw new GameException(ErrorCode.INVALID_BLUFF);
+        }
+
+        // 소유자 카드 회수
+        state.getPlayerStates().get(playerId).getHand().addAll(meld.getActualCards());
+
+        // 확장자: 카드 회수 + 1장 드로우 패널티
+        meld.getExtensions().forEach((extenderId, cards) -> {
+            state.getPlayerStates().get(extenderId).getHand().addAll(cards);
+            drawOneFromStock(state, extenderId);
+        });
+
+        state.getTableMelds().remove(meld);
+        if (request.meldId().equals(state.getLastDoubtableMeldId())) {
+            state.setLastDoubtableMeldId(null);
+        }
+
+        log.info("[Round] REVEAL_BLUFF playerId={} meldId={}", playerId, request.meldId());
+        return state;
     }
 
     /** 턴 타임아웃 처리 (20초 초과: 드로우 후 가장 높은 카드 버림) */
@@ -391,6 +507,29 @@ public class RoundService {
     private void validatePhase(RoundState state, TurnPhase expected) {
         if (state.getTurnPhase() != expected) {
             throw new GameException(ErrorCode.INVALID_TURN_PHASE);
+        }
+    }
+
+    /**
+     * 스톡에서 1장을 드로우해 지정 플레이어에게 지급한다. (패널티 드로우 전용)
+     * 스톡 소진 시 refillStock 을 시도하며, 그래도 비어있으면 드로우를 건너뛴다.
+     * 드로우 후 파산 기준을 충족하면 즉시 탈락 처리한다.
+     */
+    private void drawOneFromStock(RoundState state, String playerId) {
+        if (state.getStockPile().isEmpty()) {
+            refillStock(state);
+            if (state.getEndCondition() != null) return; // STOCK_DEPLETED
+        }
+        if (state.getStockPile().isEmpty()) return;
+
+        Card drawn = state.getStockPile().remove(0);
+        PlayerRoundState playerState = state.getPlayerStates().get(playerId);
+        playerState.getHand().add(drawn);
+
+        if (isBankrupt(state, playerId)) {
+            playerState.setHasBankrupted(true);
+            playerState.setStatus(PlayerStatus.ELIMINATED);
+            log.info("[Round] BANKRUPTCY (penalty draw) playerId={}", playerId);
         }
     }
 

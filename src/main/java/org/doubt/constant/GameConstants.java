@@ -34,6 +34,9 @@ public final class GameConstants {
     /** 파산 기준 핸드 장수 (이 이상이면 즉시 탈락) */
     public static final int BANKRUPTCY_HAND_SIZE = 10;
 
+    /** 스탑 선언 가능한 핸드 점수 최대값 (이하이면 선언 가능) */
+    public static final int STOP_SCORE_THRESHOLD = 10;
+
     /** 스톡 소진 후 버림더미로 재구성할 수 있는 최대 횟수 (초과 시 STOCK_DEPLETED 종료) */
     public static final int MAX_STOCK_REFILLS = 2;
 
