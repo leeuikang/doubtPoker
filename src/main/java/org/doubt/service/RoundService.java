@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.doubt.constant.DrawSource;
 import org.doubt.constant.ErrorCode;
+import org.doubt.constant.GameConstants;
 import org.doubt.constant.MeldType;
 import org.doubt.constant.PlayerStatus;
 import org.doubt.constant.RoundEndCondition;
@@ -95,7 +96,7 @@ public class RoundService {
         state.setTurnPhase(TurnPhase.DRAW);
         state.setStockRefillCount(0);
         state.setLastDoubtableMeldId(null);
-        state.setThankYouTimerSec(10); // 초기 버림더미 세팅 후 10초 땡큐 타이머
+        state.setThankYouTimerSec(GameConstants.THANK_YOU_TIMER_START_SEC);
         state.setEndCondition(null);
 
         log.info("[Round] started roomId={} players={} first={}", roomId, playerIds, firstPlayerId);
@@ -249,9 +250,36 @@ public class RoundService {
         return state;
     }
 
-    /** 버리기 처리 (버린 후 땡큐 타이머 5초 시작) */
+    /**
+     * 버리기 처리
+     *
+     * <p>ruleBook §5 DISCARD 단계:
+     * 손패 1장을 버림더미 상단에 추가하고 땡큐 타이머 5초를 세팅한다.
+     * 마지막 1장을 버려 손패가 0장이 되면 고잉아웃(GOING_OUT) 종료.</p>
+     */
     public RoundState handleDiscard(RoundState state, String playerId, DiscardRequest request) {
-        return null;
+        validateCurrentPlayer(state, playerId);
+        validatePhase(state, TurnPhase.ACTION);
+
+        Card card = request.card();
+        PlayerRoundState playerState = state.getPlayerStates().get(playerId);
+        validateCardsInHand(playerState.getHand(), List.of(card));
+
+        playerState.getHand().remove(card);
+        state.getDiscardPile().add(card); // 버림더미 상단에 push (리스트 끝 = 상단)
+
+        // 마지막 1장 버림 → 고잉아웃
+        if (playerState.getHand().isEmpty()) {
+            state.setEndCondition(RoundEndCondition.GOING_OUT);
+            log.info("[Round] GOING_OUT via discard playerId={}", playerId);
+            return state;
+        }
+
+        // 땡큐 타이머 5초 세팅 후 다음 플레이어 턴으로 전진
+        state.setThankYouTimerSec(GameConstants.THANK_YOU_TIMER_DISCARD_SEC);
+        advanceTurn(state);
+
+        return state;
     }
 
     /** 땡큐 선언 처리 */
@@ -305,7 +333,7 @@ public class RoundService {
 
     /** 파산 여부 체크 (핸드 10장 이상이면 즉시 탈락) */
     private boolean isBankrupt(RoundState state, String playerId) {
-        return state.getPlayerStates().get(playerId).getHand().size() >= 10;
+        return state.getPlayerStates().get(playerId).getHand().size() >= GameConstants.BANKRUPTCY_HAND_SIZE;
     }
 
     /** 플레이어 손패에 required 카드가 모두 있는지 확인 (없으면 INVALID_CARD) */
@@ -364,6 +392,31 @@ public class RoundService {
         if (state.getTurnPhase() != expected) {
             throw new GameException(ErrorCode.INVALID_TURN_PHASE);
         }
+    }
+
+    /**
+     * 다음 ACTIVE 플레이어로 턴을 전진한다.
+     * ELIMINATED 플레이어는 건너뛰고, 현재 플레이어의 hasMeldedThisTurn 을 리셋한다.
+     */
+    private void advanceTurn(RoundState state) {
+        String currentPlayerId = state.getTurnOrder().get(state.getCurrentPlayerIndex());
+        state.getPlayerStates().get(currentPlayerId).setHasMeldedThisTurn(false);
+
+        List<String> turnOrder = state.getTurnOrder();
+        int size = turnOrder.size();
+        int nextIndex = (state.getCurrentPlayerIndex() + 1) % size;
+
+        for (int i = 0; i < size; i++) {
+            String nextPlayerId = turnOrder.get(nextIndex);
+            if (state.getPlayerStates().get(nextPlayerId).getStatus() == PlayerStatus.ACTIVE) {
+                break;
+            }
+            nextIndex = (nextIndex + 1) % size;
+        }
+
+        state.setCurrentPlayerIndex(nextIndex);
+        state.setTurnPhase(TurnPhase.DRAW);
+        log.info("[Round] turn advanced to playerId={}", turnOrder.get(nextIndex));
     }
 
     private List<String> buildTurnOrder(List<String> playerIds, String firstPlayerId) {

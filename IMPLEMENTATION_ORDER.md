@@ -10,8 +10,8 @@
 
 - [V] 4. `RoundService` - 라운드 시작 — `startRound`: 덱 배분, 초기 `RoundState` 구성, 선 플레이어 결정
 - [V] 5. `RoundService` - 드로우 — `handleDraw`: 스톡/버림더미 처리, 스톡 소진 시 재구성(최대 2회)
-- [ ] 6. `RoundService` - 멜드/확장 — `handleMeld`, `handleExtend`: `MeldValidationService` 연동
-- [ ] 7. `RoundService` - 버리기 — `handleDiscard`: 버림더미 push, 땡큐 타이머 5초 트리거
+- [V] 6. `RoundService` - 멜드/확장 — `handleMeld`, `handleExtend`: `MeldValidationService` 연동
+- [V] 7. `RoundService` - 버리기 — `handleDiscard`: 버림더미 push, 땡큐 타이머 5초 트리거
 - [ ] 8. `RoundService` - 특수 선언 — `handleThankYou`, `handleStop`, `handleDoubt`, `handleRevealBluff`
 - [ ] 9. `RoundService` - 종료 조건 — 고잉아웃·스탑·스톡소진·파산 감지 → `ScoreService` 연동
 

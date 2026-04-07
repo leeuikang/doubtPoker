@@ -15,6 +15,7 @@ import org.doubt.dto.PlayerRoundState;
 import org.doubt.dto.RoundState;
 import org.doubt.dto.request.DrawRequest;
 import org.doubt.dto.request.ExtendRequest;
+import org.doubt.dto.request.DiscardRequest;
 import org.doubt.dto.request.MeldRequest;
 import org.doubt.exception.GameException;
 import org.junit.jupiter.api.BeforeEach;
@@ -1174,4 +1175,295 @@ class RoundServiceTest {
             }
         }
     }
+
+    // ----------------------------------------------------------------
+    // handleDiscard 테스트
+    // ----------------------------------------------------------------
+
+    @Nested
+    @DisplayName("handleDiscard")
+    class HandleDiscard {
+
+        private static final String P1 = "p1";
+        private static final String P2 = "p2";
+
+        /**
+         * 2인 게임 RoundState 조립 헬퍼.
+         * p1 이 currentPlayer(index 0), p2 가 다음 플레이어.
+         */
+        private RoundState buildTwoPlayerState(String p1, String p2,
+                                               TurnPhase phase, List<Card> p1Hand) {
+            RoundState state = new RoundState();
+            state.setTurnOrder(new ArrayList<>(List.of(p1, p2)));
+            state.setCurrentPlayerIndex(0);
+            state.setTurnPhase(phase);
+            state.setStockPile(new ArrayList<>());
+            state.setDiscardPile(makeCards(1));
+            state.setStockRefillCount(0);
+            state.setEndCondition(null);
+            state.setTableMelds(new ArrayList<>());
+
+            Map<String, PlayerRoundState> playerStates = new LinkedHashMap<>();
+            for (String pid : List.of(p1, p2)) {
+                PlayerRoundState prs = new PlayerRoundState();
+                prs.setPlayerId(pid);
+                prs.setHand(pid.equals(p1) ? new ArrayList<>(p1Hand) : makeCards(5));
+                prs.setStatus(PlayerStatus.ACTIVE);
+                prs.setHasMeldedThisTurn(false);
+                prs.setHasEverMelded(false);
+                prs.setHasDeclaredStop(false);
+                prs.setHasBankrupted(false);
+                prs.setDisconnectCount(0);
+                playerStates.put(pid, prs);
+            }
+            state.setPlayerStates(playerStates);
+            return state;
+        }
+
+        /**
+         * 3인 게임 RoundState 조립 헬퍼 (ELIMINATED 플레이어 건너뛰기 테스트용).
+         * turnOrder = [p1, p2, p3], p1 이 currentPlayer.
+         */
+        private RoundState buildThreePlayerState(String p1, String p2, String p3,
+                                                 PlayerStatus p2Status,
+                                                 List<Card> p1Hand) {
+            RoundState state = new RoundState();
+            state.setTurnOrder(new ArrayList<>(List.of(p1, p2, p3)));
+            state.setCurrentPlayerIndex(0);
+            state.setTurnPhase(TurnPhase.ACTION);
+            state.setStockPile(new ArrayList<>());
+            state.setDiscardPile(makeCards(1));
+            state.setStockRefillCount(0);
+            state.setEndCondition(null);
+            state.setTableMelds(new ArrayList<>());
+
+            Map<String, PlayerRoundState> playerStates = new LinkedHashMap<>();
+            for (String pid : List.of(p1, p2, p3)) {
+                PlayerRoundState prs = new PlayerRoundState();
+                prs.setPlayerId(pid);
+                prs.setHand(pid.equals(p1) ? new ArrayList<>(p1Hand) : makeCards(3));
+                prs.setStatus(pid.equals(p2) ? p2Status : PlayerStatus.ACTIVE);
+                prs.setHasMeldedThisTurn(false);
+                prs.setHasEverMelded(false);
+                prs.setHasDeclaredStop(false);
+                prs.setHasBankrupted(false);
+                prs.setDisconnectCount(0);
+                playerStates.put(pid, prs);
+            }
+            state.setPlayerStates(playerStates);
+            return state;
+        }
+
+        @Nested
+        @DisplayName("검증")
+        class Validation {
+
+            @Test
+            @DisplayName("현재 플레이어가 아닌 플레이어가 버리기를 시도하면 INVALID_TURN 예외가 발생한다")
+            void throws_invalid_turn_when_not_current_player() {
+                List<Card> hand = makeCards(3);
+                RoundState state = buildState(P1, TurnPhase.ACTION,
+                        makeCards(5), makeCards(1), hand);
+
+                Card card = hand.get(0);
+                DiscardRequest request = new DiscardRequest(card);
+
+                assertThatThrownBy(() -> roundService.handleDiscard(state, "other", request))
+                        .isInstanceOf(GameException.class)
+                        .satisfies(e -> assertThat(((GameException) e).getErrorCode())
+                                .isEqualTo(ErrorCode.INVALID_TURN));
+            }
+
+            @Test
+            @DisplayName("DRAW 페이즈에서 버리기를 시도하면 INVALID_TURN_PHASE 예외가 발생한다")
+            void throws_invalid_turn_phase_when_draw_phase() {
+                List<Card> hand = makeCards(3);
+                RoundState state = buildState(P1, TurnPhase.DRAW,
+                        makeCards(5), makeCards(1), hand);
+
+                Card card = hand.get(0);
+                DiscardRequest request = new DiscardRequest(card);
+
+                assertThatThrownBy(() -> roundService.handleDiscard(state, P1, request))
+                        .isInstanceOf(GameException.class)
+                        .satisfies(e -> assertThat(((GameException) e).getErrorCode())
+                                .isEqualTo(ErrorCode.INVALID_TURN_PHASE));
+            }
+
+            @Test
+            @DisplayName("손패에 없는 카드를 버리려 하면 INVALID_CARD 예외가 발생한다")
+            void throws_invalid_card_when_card_not_in_hand() {
+                List<Card> hand = new ArrayList<>(List.of(new Card(Suit.SPADE, Rank.ACE)));
+                RoundState state = buildState(P1, TurnPhase.ACTION,
+                        makeCards(5), makeCards(1), hand);
+
+                Card notInHand = new Card(Suit.HEART, Rank.KING);
+                DiscardRequest request = new DiscardRequest(notInHand);
+
+                assertThatThrownBy(() -> roundService.handleDiscard(state, P1, request))
+                        .isInstanceOf(GameException.class)
+                        .satisfies(e -> assertThat(((GameException) e).getErrorCode())
+                                .isEqualTo(ErrorCode.INVALID_CARD));
+            }
+        }
+
+        @Nested
+        @DisplayName("고잉아웃")
+        class GoingOut {
+
+            @Test
+            @DisplayName("마지막 1장을 버리면 endCondition 이 GOING_OUT 이 되고 손패가 비어있다")
+            void going_out_when_last_card_discarded() {
+                Card lastCard = new Card(Suit.SPADE, Rank.ACE);
+                List<Card> hand = new ArrayList<>(List.of(lastCard));
+                RoundState state = buildState(P1, TurnPhase.ACTION,
+                        makeCards(5), makeCards(1), hand);
+
+                DiscardRequest request = new DiscardRequest(lastCard);
+                RoundState result = roundService.handleDiscard(state, P1, request);
+
+                assertThat(result.getEndCondition()).isEqualTo(RoundEndCondition.GOING_OUT);
+                assertThat(result.getPlayerStates().get(P1).getHand()).isEmpty();
+            }
+
+            @Test
+            @DisplayName("마지막 1장을 버릴 때 thankYouTimerSec 는 5로 설정되지 않는다")
+            void timer_not_set_to_5_when_going_out() {
+                Card lastCard = new Card(Suit.SPADE, Rank.ACE);
+                List<Card> hand = new ArrayList<>(List.of(lastCard));
+                RoundState state = buildState(P1, TurnPhase.ACTION,
+                        makeCards(5), makeCards(1), hand);
+                state.setThankYouTimerSec(0);
+
+                DiscardRequest request = new DiscardRequest(lastCard);
+                RoundState result = roundService.handleDiscard(state, P1, request);
+
+                assertThat(result.getThankYouTimerSec()).isNotEqualTo(5);
+            }
+
+            @Test
+            @DisplayName("마지막 1장을 버릴 때 turnPhase 는 ACTION 그대로이고 currentPlayerIndex 는 변하지 않는다")
+            void turn_not_advanced_when_going_out() {
+                Card lastCard = new Card(Suit.SPADE, Rank.ACE);
+                List<Card> hand = new ArrayList<>(List.of(lastCard));
+                RoundState state = buildState(P1, TurnPhase.ACTION,
+                        makeCards(5), makeCards(1), hand);
+                int indexBefore = state.getCurrentPlayerIndex();
+
+                DiscardRequest request = new DiscardRequest(lastCard);
+                RoundState result = roundService.handleDiscard(state, P1, request);
+
+                assertThat(result.getTurnPhase()).isEqualTo(TurnPhase.ACTION);
+                assertThat(result.getCurrentPlayerIndex()).isEqualTo(indexBefore);
+            }
+        }
+
+        @Nested
+        @DisplayName("정상 처리")
+        class HappyPath {
+
+            @Test
+            @DisplayName("버린 카드가 손패에서 제거되고 버림더미 끝(상단)에 추가된다")
+            void card_removed_from_hand_and_added_to_discard_top() {
+                Card discard = new Card(Suit.HEART, Rank.KING);
+                Card keep = new Card(Suit.CLUB, Rank.TWO);
+                List<Card> hand = new ArrayList<>(List.of(discard, keep));
+                List<Card> pile = new ArrayList<>(List.of(new Card(Suit.SPADE, Rank.THREE)));
+                RoundState state = buildState(P1, TurnPhase.ACTION,
+                        makeCards(5), pile, hand);
+
+                DiscardRequest request = new DiscardRequest(discard);
+                RoundState result = roundService.handleDiscard(state, P1, request);
+
+                assertThat(result.getPlayerStates().get(P1).getHand()).doesNotContain(discard);
+                assertThat(result.getPlayerStates().get(P1).getHand()).contains(keep);
+                List<Card> resultPile = result.getDiscardPile();
+                assertThat(resultPile.get(resultPile.size() - 1)).isEqualTo(discard);
+            }
+
+            @Test
+            @DisplayName("정상 버리기 후 thankYouTimerSec 가 5로 설정된다")
+            void thank_you_timer_set_to_5_after_normal_discard() {
+                Card discard = new Card(Suit.HEART, Rank.KING);
+                Card keep = new Card(Suit.CLUB, Rank.TWO);
+                List<Card> hand = new ArrayList<>(List.of(discard, keep));
+                RoundState state = buildState(P1, TurnPhase.ACTION,
+                        makeCards(5), makeCards(1), hand);
+
+                DiscardRequest request = new DiscardRequest(discard);
+                RoundState result = roundService.handleDiscard(state, P1, request);
+
+                assertThat(result.getThankYouTimerSec()).isEqualTo(5);
+            }
+
+            @Test
+            @DisplayName("정상 버리기 후 turnPhase 가 DRAW 로 전환된다")
+            void turn_phase_becomes_draw_after_normal_discard() {
+                Card discard = new Card(Suit.HEART, Rank.KING);
+                Card keep = new Card(Suit.CLUB, Rank.TWO);
+                List<Card> hand = new ArrayList<>(List.of(discard, keep));
+                RoundState state = buildState(P1, TurnPhase.ACTION,
+                        makeCards(5), makeCards(1), hand);
+
+                DiscardRequest request = new DiscardRequest(discard);
+                RoundState result = roundService.handleDiscard(state, P1, request);
+
+                assertThat(result.getTurnPhase()).isEqualTo(TurnPhase.DRAW);
+            }
+
+            @Test
+            @DisplayName("정상 버리기 후 currentPlayerIndex 가 변경된다")
+            void current_player_index_advances_after_normal_discard() {
+                Card discard = new Card(Suit.HEART, Rank.KING);
+                Card keep = new Card(Suit.CLUB, Rank.TWO);
+                List<Card> hand = new ArrayList<>(List.of(discard, keep));
+                RoundState state = buildTwoPlayerState(P1, P2, TurnPhase.ACTION, hand);
+                int indexBefore = state.getCurrentPlayerIndex();
+
+                DiscardRequest request = new DiscardRequest(discard);
+                RoundState result = roundService.handleDiscard(state, P1, request);
+
+                assertThat(result.getCurrentPlayerIndex()).isNotEqualTo(indexBefore);
+            }
+
+            @Test
+            @DisplayName("2인 게임에서 p1 이 버리면 currentPlayer 가 p2 가 된다")
+            void current_player_becomes_p2_after_p1_discards_in_two_player_game() {
+                Card discard = new Card(Suit.HEART, Rank.KING);
+                Card keep = new Card(Suit.CLUB, Rank.TWO);
+                List<Card> hand = new ArrayList<>(List.of(discard, keep));
+                RoundState state = buildTwoPlayerState(P1, P2, TurnPhase.ACTION, hand);
+
+                DiscardRequest request = new DiscardRequest(discard);
+                RoundState result = roundService.handleDiscard(state, P1, request);
+
+                String currentPlayer = result.getTurnOrder().get(result.getCurrentPlayerIndex());
+                assertThat(currentPlayer).isEqualTo(P2);
+            }
+        }
+
+        @Nested
+        @DisplayName("턴 전진 - 멀티 플레이어")
+        class TurnAdvance {
+
+            @Test
+            @DisplayName("다음 순서 플레이어가 ELIMINATED 이면 그 다음 ACTIVE 플레이어로 건너뛴다")
+            void skips_eliminated_player_when_advancing_turn() {
+                // turnOrder = [p1, p2, p3], p2 가 ELIMINATED
+                // p1 이 버리면 p2를 건너뛰고 p3 가 currentPlayer 가 되어야 한다
+                Card discard = new Card(Suit.HEART, Rank.KING);
+                Card keep = new Card(Suit.CLUB, Rank.TWO);
+                List<Card> hand = new ArrayList<>(List.of(discard, keep));
+                RoundState state = buildThreePlayerState(P1, P2, "p3",
+                        PlayerStatus.ELIMINATED, hand);
+
+                DiscardRequest request = new DiscardRequest(discard);
+                RoundState result = roundService.handleDiscard(state, P1, request);
+
+                String currentPlayer = result.getTurnOrder().get(result.getCurrentPlayerIndex());
+                assertThat(currentPlayer).isEqualTo("p3");
+            }
+        }
+    }
+
 }
