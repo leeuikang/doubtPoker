@@ -1,6 +1,7 @@
 package org.doubt.dto;
 
 import lombok.Getter;
+import lombok.Setter;
 import org.doubt.constant.MeldType;
 
 import java.util.ArrayList;
@@ -16,6 +17,7 @@ import java.util.Map;
  * - isBluff      : 거짓말 멜드 여부
  */
 @Getter
+@Setter
 public class Meld {
 
     private String id;
@@ -25,4 +27,19 @@ public class Meld {
     private List<DeclaredCard> declaredCards;
     private Map<String, List<Card>> extensions; // playerId → 붙인 카드들
     private boolean isBluff;
+
+    /** 신규 멜드 생성 팩토리. extensions 는 빈 맵으로 초기화된다. */
+    public static Meld create(String id, String ownerId, MeldType type,
+                               List<Card> actualCards, List<DeclaredCard> declaredCards,
+                               boolean isBluff) {
+        Meld meld = new Meld();
+        meld.id = id;
+        meld.ownerId = ownerId;
+        meld.type = type;
+        meld.actualCards = actualCards;
+        meld.declaredCards = declaredCards;
+        meld.isBluff = isBluff;
+        meld.extensions = new LinkedHashMap<>();
+        return meld;
+    }
 }

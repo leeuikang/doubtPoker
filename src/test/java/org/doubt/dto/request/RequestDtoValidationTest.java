@@ -119,7 +119,7 @@ class RequestDtoValidationTest {
         }
 
         @Test
-        @DisplayName("actualCards 가 빈 리스트이면 위반 발생 (@Size min=3)")
+        @DisplayName("actualCards 가 빈 리스트이면 위반 발생 (@Size min=1)")
         void emptyActualCards_shouldProduceViolation() {
             MeldRequest req = new MeldRequest(
                     Collections.emptyList(), validDeclaredCardList(1), MeldType.SET);

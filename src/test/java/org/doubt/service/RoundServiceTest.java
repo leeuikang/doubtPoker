@@ -2,15 +2,20 @@ package org.doubt.service;
 
 import org.doubt.constant.DrawSource;
 import org.doubt.constant.ErrorCode;
+import org.doubt.constant.MeldType;
 import org.doubt.constant.PlayerStatus;
 import org.doubt.constant.Rank;
 import org.doubt.constant.RoundEndCondition;
 import org.doubt.constant.Suit;
 import org.doubt.constant.TurnPhase;
 import org.doubt.dto.Card;
+import org.doubt.dto.DeclaredCard;
+import org.doubt.dto.Meld;
 import org.doubt.dto.PlayerRoundState;
 import org.doubt.dto.RoundState;
 import org.doubt.dto.request.DrawRequest;
+import org.doubt.dto.request.ExtendRequest;
+import org.doubt.dto.request.MeldRequest;
 import org.doubt.exception.GameException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -94,6 +99,18 @@ class RoundServiceTest {
         state.setPlayerStates(playerStates);
 
         return state;
+    }
+
+    /**
+     * actualCards 와 1:1 대응하는 DeclaredCard 리스트를 생성한다 (정직 선언).
+     * 거짓말 테스트 시에는 별도로 조립한다.
+     */
+    private List<DeclaredCard> toHonestDeclared(List<Card> cards) {
+        List<DeclaredCard> declared = new ArrayList<>();
+        for (Card c : cards) {
+            declared.add(new DeclaredCard(c.suit(), c.rank()));
+        }
+        return declared;
     }
 
     // ----------------------------------------------------------------
@@ -592,6 +609,568 @@ class RoundServiceTest {
                 assertThat(prs.isHasBankrupted()).isTrue();
                 assertThat(prs.getStatus()).isEqualTo(PlayerStatus.ELIMINATED);
                 assertThat(result.getEndCondition()).isNull();
+            }
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // handleMeld 테스트
+    // ----------------------------------------------------------------
+
+    @Nested
+    @DisplayName("handleMeld")
+    class HandleMeld {
+
+        private static final String PLAYER_ID = "p1";
+
+        @Nested
+        @DisplayName("검증")
+        class Validation {
+
+            @Test
+            @DisplayName("현재 플레이어가 아닌 플레이어가 멜드하면 INVALID_TURN 예외가 발생한다")
+            void throws_invalid_turn_when_not_current_player() {
+                RoundState state = buildState(PLAYER_ID, TurnPhase.ACTION,
+                        makeCards(5), makeCards(3), makeCards(5));
+
+                List<Card> cards = List.of(new Card(Suit.SPADE, Rank.ACE));
+                MeldRequest request = new MeldRequest(
+                        cards, toHonestDeclared(cards), MeldType.SOLO_SEVEN);
+
+                assertThatThrownBy(() -> roundService.handleMeld(state, "other", request))
+                        .isInstanceOf(GameException.class)
+                        .satisfies(e -> assertThat(((GameException) e).getErrorCode())
+                                .isEqualTo(ErrorCode.INVALID_TURN));
+            }
+
+            @Test
+            @DisplayName("ACTION 페이즈가 아닌 DRAW 페이즈에서 멜드하면 INVALID_TURN_PHASE 예외가 발생한다")
+            void throws_invalid_turn_phase_when_draw_phase() {
+                RoundState state = buildState(PLAYER_ID, TurnPhase.DRAW,
+                        makeCards(5), makeCards(3), makeCards(5));
+
+                List<Card> cards = List.of(new Card(Suit.SPADE, Rank.ACE));
+                MeldRequest request = new MeldRequest(
+                        cards, toHonestDeclared(cards), MeldType.SOLO_SEVEN);
+
+                assertThatThrownBy(() -> roundService.handleMeld(state, PLAYER_ID, request))
+                        .isInstanceOf(GameException.class)
+                        .satisfies(e -> assertThat(((GameException) e).getErrorCode())
+                                .isEqualTo(ErrorCode.INVALID_TURN_PHASE));
+            }
+
+            @Test
+            @DisplayName("손패에 없는 카드를 멜드에 사용하면 INVALID_CARD 예외가 발생한다")
+            void throws_invalid_card_when_card_not_in_hand() {
+                // 손패에는 SPADE ACE 만 있음
+                List<Card> hand = List.of(new Card(Suit.SPADE, Rank.ACE));
+                RoundState state = buildState(PLAYER_ID, TurnPhase.ACTION,
+                        makeCards(5), makeCards(3), hand);
+
+                // 손패에 없는 카드(HEART TWO)를 멜드에 사용
+                List<Card> meldCards = List.of(new Card(Suit.HEART, Rank.TWO));
+                MeldRequest request = new MeldRequest(
+                        meldCards, toHonestDeclared(meldCards), MeldType.SOLO_SEVEN);
+
+                assertThatThrownBy(() -> roundService.handleMeld(state, PLAYER_ID, request))
+                        .isInstanceOf(GameException.class)
+                        .satisfies(e -> assertThat(((GameException) e).getErrorCode())
+                                .isEqualTo(ErrorCode.INVALID_CARD));
+            }
+
+            @Test
+            @DisplayName("validateMeld 가 false 를 반환하면 INVALID_MELD 예외가 발생한다")
+            void throws_invalid_meld_when_validation_fails() {
+                Card card = new Card(Suit.SPADE, Rank.SEVEN);
+                List<Card> hand = new ArrayList<>(List.of(card));
+                RoundState state = buildState(PLAYER_ID, TurnPhase.ACTION,
+                        makeCards(5), makeCards(3), hand);
+
+                List<Card> meldCards = List.of(card);
+                MeldRequest request = new MeldRequest(
+                        meldCards, toHonestDeclared(meldCards), MeldType.SOLO_SEVEN);
+
+                when(meldValidationService.validateMeld(any(), any(), any())).thenReturn(false);
+
+                assertThatThrownBy(() -> roundService.handleMeld(state, PLAYER_ID, request))
+                        .isInstanceOf(GameException.class)
+                        .satisfies(e -> assertThat(((GameException) e).getErrorCode())
+                                .isEqualTo(ErrorCode.INVALID_MELD));
+            }
+        }
+
+        @Nested
+        @DisplayName("거짓말 멜드")
+        class BluffMeld {
+
+            @Test
+            @DisplayName("거짓말 멜드 후 손패가 비어있으면 CANNOT_GOING_OUT 예외가 발생한다")
+            void throws_cannot_going_out_when_bluff_empties_hand() {
+                // 손패에 카드 1장만 있고, 그 카드로 거짓말 멜드 → 손패 0장이 됨
+                Card actual = new Card(Suit.SPADE, Rank.TWO);
+                List<Card> hand = new ArrayList<>(List.of(actual));
+                RoundState state = buildState(PLAYER_ID, TurnPhase.ACTION,
+                        makeCards(5), makeCards(3), hand);
+
+                // 실제는 TWO 인데 SEVEN 으로 선언 → 거짓말
+                List<Card> meldCards = List.of(actual);
+                List<DeclaredCard> declared = List.of(new DeclaredCard(Suit.SPADE, Rank.SEVEN));
+                MeldRequest request = new MeldRequest(meldCards, declared, MeldType.SOLO_SEVEN);
+
+                when(meldValidationService.validateMeld(any(), any(), any())).thenReturn(true);
+
+                assertThatThrownBy(() -> roundService.handleMeld(state, PLAYER_ID, request))
+                        .isInstanceOf(GameException.class)
+                        .satisfies(e -> assertThat(((GameException) e).getErrorCode())
+                                .isEqualTo(ErrorCode.CANNOT_GOING_OUT));
+            }
+
+            @Test
+            @DisplayName("거짓말 멜드 후 손패가 남아있으면 정상 처리된다")
+            void bluff_meld_succeeds_when_hand_not_empty_after() {
+                Card actual = new Card(Suit.SPADE, Rank.TWO);
+                Card remaining = new Card(Suit.HEART, Rank.THREE);
+                List<Card> hand = new ArrayList<>(List.of(actual, remaining));
+                RoundState state = buildState(PLAYER_ID, TurnPhase.ACTION,
+                        makeCards(5), makeCards(3), hand);
+
+                // 실제는 TWO 인데 SEVEN 으로 선언 → 거짓말
+                List<Card> meldCards = List.of(actual);
+                List<DeclaredCard> declared = List.of(new DeclaredCard(Suit.SPADE, Rank.SEVEN));
+                MeldRequest request = new MeldRequest(meldCards, declared, MeldType.SOLO_SEVEN);
+
+                when(meldValidationService.validateMeld(any(), any(), any())).thenReturn(true);
+
+                RoundState result = roundService.handleMeld(state, PLAYER_ID, request);
+
+                // 멜드가 테이블에 추가되고 isBluff = true
+                assertThat(result.getTableMelds()).hasSize(1);
+                assertThat(result.getTableMelds().get(0).isBluff()).isTrue();
+                // 손패에 remaining 만 남아있음
+                assertThat(result.getPlayerStates().get(PLAYER_ID).getHand()).containsExactly(remaining);
+                // 거짓말 멜드 → 손패 비어도 GOING_OUT 아님, 여기서는 손패가 남아있으므로 null
+                assertThat(result.getEndCondition()).isNull();
+            }
+
+            @Test
+            @DisplayName("정직한 멜드는 isBluff 가 false 이다")
+            void honest_meld_has_bluff_false() {
+                Card card = new Card(Suit.SPADE, Rank.SEVEN);
+                List<Card> hand = new ArrayList<>(List.of(card, new Card(Suit.HEART, Rank.TWO)));
+                RoundState state = buildState(PLAYER_ID, TurnPhase.ACTION,
+                        makeCards(5), makeCards(3), hand);
+
+                List<Card> meldCards = List.of(card);
+                MeldRequest request = new MeldRequest(
+                        meldCards, toHonestDeclared(meldCards), MeldType.SOLO_SEVEN);
+
+                when(meldValidationService.validateMeld(any(), any(), any())).thenReturn(true);
+
+                RoundState result = roundService.handleMeld(state, PLAYER_ID, request);
+
+                assertThat(result.getTableMelds().get(0).isBluff()).isFalse();
+            }
+        }
+
+        @Nested
+        @DisplayName("고잉아웃")
+        class GoingOut {
+
+            @Test
+            @DisplayName("정직한 멜드로 손패가 비어지면 GOING_OUT 종료 조건이 설정된다")
+            void going_out_when_hand_empty_after_honest_meld() {
+                Card card = new Card(Suit.SPADE, Rank.SEVEN);
+                List<Card> hand = new ArrayList<>(List.of(card));
+                RoundState state = buildState(PLAYER_ID, TurnPhase.ACTION,
+                        makeCards(5), makeCards(3), hand);
+
+                List<Card> meldCards = List.of(card);
+                MeldRequest request = new MeldRequest(
+                        meldCards, toHonestDeclared(meldCards), MeldType.SOLO_SEVEN);
+
+                when(meldValidationService.validateMeld(any(), any(), any())).thenReturn(true);
+
+                RoundState result = roundService.handleMeld(state, PLAYER_ID, request);
+
+                assertThat(result.getEndCondition()).isEqualTo(RoundEndCondition.GOING_OUT);
+                assertThat(result.getPlayerStates().get(PLAYER_ID).getHand()).isEmpty();
+            }
+
+            @Test
+            @DisplayName("멜드 후 손패가 남아있으면 endCondition 이 null 이다")
+            void no_going_out_when_hand_not_empty() {
+                Card card = new Card(Suit.SPADE, Rank.SEVEN);
+                Card extra = new Card(Suit.HEART, Rank.TWO);
+                List<Card> hand = new ArrayList<>(List.of(card, extra));
+                RoundState state = buildState(PLAYER_ID, TurnPhase.ACTION,
+                        makeCards(5), makeCards(3), hand);
+
+                List<Card> meldCards = List.of(card);
+                MeldRequest request = new MeldRequest(
+                        meldCards, toHonestDeclared(meldCards), MeldType.SOLO_SEVEN);
+
+                when(meldValidationService.validateMeld(any(), any(), any())).thenReturn(true);
+
+                RoundState result = roundService.handleMeld(state, PLAYER_ID, request);
+
+                assertThat(result.getEndCondition()).isNull();
+            }
+        }
+
+        @Nested
+        @DisplayName("정상 처리")
+        class HappyPath {
+
+            @Test
+            @DisplayName("멜드 성공 시 테이블에 멜드가 추가된다")
+            void meld_is_added_to_table_melds() {
+                Card card = new Card(Suit.SPADE, Rank.SEVEN);
+                List<Card> hand = new ArrayList<>(List.of(card, new Card(Suit.HEART, Rank.TWO)));
+                RoundState state = buildState(PLAYER_ID, TurnPhase.ACTION,
+                        makeCards(5), makeCards(3), hand);
+
+                List<Card> meldCards = List.of(card);
+                MeldRequest request = new MeldRequest(
+                        meldCards, toHonestDeclared(meldCards), MeldType.SOLO_SEVEN);
+
+                when(meldValidationService.validateMeld(any(), any(), any())).thenReturn(true);
+
+                RoundState result = roundService.handleMeld(state, PLAYER_ID, request);
+
+                assertThat(result.getTableMelds()).hasSize(1);
+                Meld meld = result.getTableMelds().get(0);
+                assertThat(meld.getOwnerId()).isEqualTo(PLAYER_ID);
+                assertThat(meld.getType()).isEqualTo(MeldType.SOLO_SEVEN);
+                assertThat(meld.getActualCards()).containsExactlyElementsOf(meldCards);
+            }
+
+            @Test
+            @DisplayName("멜드 성공 시 lastDoubtableMeldId 가 해당 멜드 ID 로 설정된다")
+            void last_doubtable_meld_id_is_set() {
+                Card card = new Card(Suit.SPADE, Rank.SEVEN);
+                List<Card> hand = new ArrayList<>(List.of(card, new Card(Suit.HEART, Rank.TWO)));
+                RoundState state = buildState(PLAYER_ID, TurnPhase.ACTION,
+                        makeCards(5), makeCards(3), hand);
+
+                List<Card> meldCards = List.of(card);
+                MeldRequest request = new MeldRequest(
+                        meldCards, toHonestDeclared(meldCards), MeldType.SOLO_SEVEN);
+
+                when(meldValidationService.validateMeld(any(), any(), any())).thenReturn(true);
+
+                RoundState result = roundService.handleMeld(state, PLAYER_ID, request);
+
+                assertThat(result.getLastDoubtableMeldId())
+                        .isEqualTo(result.getTableMelds().get(0).getId());
+            }
+
+            @Test
+            @DisplayName("멜드 성공 시 hasMeldedThisTurn 과 hasEverMelded 가 true 로 설정된다")
+            void player_flags_set_after_meld() {
+                Card card = new Card(Suit.SPADE, Rank.SEVEN);
+                List<Card> hand = new ArrayList<>(List.of(card, new Card(Suit.HEART, Rank.TWO)));
+                RoundState state = buildState(PLAYER_ID, TurnPhase.ACTION,
+                        makeCards(5), makeCards(3), hand);
+
+                List<Card> meldCards = List.of(card);
+                MeldRequest request = new MeldRequest(
+                        meldCards, toHonestDeclared(meldCards), MeldType.SOLO_SEVEN);
+
+                when(meldValidationService.validateMeld(any(), any(), any())).thenReturn(true);
+
+                RoundState result = roundService.handleMeld(state, PLAYER_ID, request);
+
+                PlayerRoundState prs = result.getPlayerStates().get(PLAYER_ID);
+                assertThat(prs.isHasMeldedThisTurn()).isTrue();
+                assertThat(prs.isHasEverMelded()).isTrue();
+            }
+
+            @Test
+            @DisplayName("멜드 성공 시 actualCards 가 손패에서 제거된다")
+            void actual_cards_removed_from_hand_after_meld() {
+                Card meldCard = new Card(Suit.SPADE, Rank.SEVEN);
+                Card keepCard = new Card(Suit.HEART, Rank.TWO);
+                List<Card> hand = new ArrayList<>(List.of(meldCard, keepCard));
+                RoundState state = buildState(PLAYER_ID, TurnPhase.ACTION,
+                        makeCards(5), makeCards(3), hand);
+
+                List<Card> meldCards = List.of(meldCard);
+                MeldRequest request = new MeldRequest(
+                        meldCards, toHonestDeclared(meldCards), MeldType.SOLO_SEVEN);
+
+                when(meldValidationService.validateMeld(any(), any(), any())).thenReturn(true);
+
+                RoundState result = roundService.handleMeld(state, PLAYER_ID, request);
+
+                List<Card> handAfter = result.getPlayerStates().get(PLAYER_ID).getHand();
+                assertThat(handAfter).doesNotContain(meldCard);
+                assertThat(handAfter).contains(keepCard);
+            }
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // handleExtend 테스트
+    // ----------------------------------------------------------------
+
+    @Nested
+    @DisplayName("handleExtend")
+    class HandleExtend {
+
+        private static final String PLAYER_ID = "p1";
+
+        /** 테이블 위에 멜드가 1개 있는 상태를 만드는 헬퍼 */
+        private RoundState buildStateWithMeld(List<Card> playerHand, String meldId) {
+            RoundState state = buildState(PLAYER_ID, TurnPhase.ACTION,
+                    makeCards(5), makeCards(3), playerHand);
+
+            // hasMeldedThisTurn = true (extend 전제 조건)
+            state.getPlayerStates().get(PLAYER_ID).setHasMeldedThisTurn(true);
+
+            // 테이블에 SET 멜드 1개 추가
+            Card setCard = new Card(Suit.SPADE, Rank.KING);
+            List<Card> meldActual = new ArrayList<>(List.of(
+                    setCard,
+                    new Card(Suit.HEART, Rank.KING),
+                    new Card(Suit.DIAMOND, Rank.KING)));
+            List<DeclaredCard> meldDeclared = toHonestDeclared(meldActual);
+            Meld meld = Meld.create(meldId, PLAYER_ID, MeldType.SET, meldActual, meldDeclared, false);
+            state.getTableMelds().add(meld);
+
+            return state;
+        }
+
+        @Nested
+        @DisplayName("검증")
+        class Validation {
+
+            @Test
+            @DisplayName("현재 플레이어가 아닌 플레이어가 확장하면 INVALID_TURN 예외가 발생한다")
+            void throws_invalid_turn_when_not_current_player() {
+                Card extCard = new Card(Suit.CLUB, Rank.KING);
+                List<Card> hand = new ArrayList<>(List.of(extCard));
+                RoundState state = buildStateWithMeld(hand, "meld-1");
+
+                List<Card> extCards = List.of(extCard);
+                ExtendRequest request = new ExtendRequest("meld-1", extCards, toHonestDeclared(extCards));
+
+                assertThatThrownBy(() -> roundService.handleExtend(state, "other", request))
+                        .isInstanceOf(GameException.class)
+                        .satisfies(e -> assertThat(((GameException) e).getErrorCode())
+                                .isEqualTo(ErrorCode.INVALID_TURN));
+            }
+
+            @Test
+            @DisplayName("ACTION 페이즈가 아닐 때 확장하면 INVALID_TURN_PHASE 예외가 발생한다")
+            void throws_invalid_turn_phase_when_not_action_phase() {
+                Card extCard = new Card(Suit.CLUB, Rank.KING);
+                List<Card> hand = new ArrayList<>(List.of(extCard));
+                RoundState state = buildStateWithMeld(hand, "meld-1");
+                state.setTurnPhase(TurnPhase.DRAW);
+
+                List<Card> extCards = List.of(extCard);
+                ExtendRequest request = new ExtendRequest("meld-1", extCards, toHonestDeclared(extCards));
+
+                assertThatThrownBy(() -> roundService.handleExtend(state, PLAYER_ID, request))
+                        .isInstanceOf(GameException.class)
+                        .satisfies(e -> assertThat(((GameException) e).getErrorCode())
+                                .isEqualTo(ErrorCode.INVALID_TURN_PHASE));
+            }
+
+            @Test
+            @DisplayName("이번 턴에 멜드를 하지 않은 플레이어가 확장하면 INVALID_EXTEND 예외가 발생한다")
+            void throws_invalid_extend_when_not_melded_this_turn() {
+                Card extCard = new Card(Suit.CLUB, Rank.KING);
+                List<Card> hand = new ArrayList<>(List.of(extCard));
+                RoundState state = buildStateWithMeld(hand, "meld-1");
+
+                // hasMeldedThisTurn 을 false 로 리셋
+                state.getPlayerStates().get(PLAYER_ID).setHasMeldedThisTurn(false);
+
+                List<Card> extCards = List.of(extCard);
+                ExtendRequest request = new ExtendRequest("meld-1", extCards, toHonestDeclared(extCards));
+
+                assertThatThrownBy(() -> roundService.handleExtend(state, PLAYER_ID, request))
+                        .isInstanceOf(GameException.class)
+                        .satisfies(e -> assertThat(((GameException) e).getErrorCode())
+                                .isEqualTo(ErrorCode.INVALID_EXTEND));
+            }
+
+            @Test
+            @DisplayName("존재하지 않는 meldId 를 지정하면 MELD_NOT_FOUND 예외가 발생한다")
+            void throws_meld_not_found_when_meld_id_not_exist() {
+                Card extCard = new Card(Suit.CLUB, Rank.KING);
+                List<Card> hand = new ArrayList<>(List.of(extCard));
+                RoundState state = buildStateWithMeld(hand, "meld-1");
+
+                List<Card> extCards = List.of(extCard);
+                ExtendRequest request = new ExtendRequest("nonexistent-meld", extCards, toHonestDeclared(extCards));
+
+                assertThatThrownBy(() -> roundService.handleExtend(state, PLAYER_ID, request))
+                        .isInstanceOf(GameException.class)
+                        .satisfies(e -> assertThat(((GameException) e).getErrorCode())
+                                .isEqualTo(ErrorCode.MELD_NOT_FOUND));
+            }
+
+            @Test
+            @DisplayName("손패에 없는 카드로 확장하면 INVALID_CARD 예외가 발생한다")
+            void throws_invalid_card_when_card_not_in_hand() {
+                // 손패에 KING 없음
+                List<Card> hand = new ArrayList<>(List.of(new Card(Suit.SPADE, Rank.ACE)));
+                RoundState state = buildStateWithMeld(hand, "meld-1");
+
+                List<Card> extCards = List.of(new Card(Suit.CLUB, Rank.KING));
+                ExtendRequest request = new ExtendRequest("meld-1", extCards, toHonestDeclared(extCards));
+
+                assertThatThrownBy(() -> roundService.handleExtend(state, PLAYER_ID, request))
+                        .isInstanceOf(GameException.class)
+                        .satisfies(e -> assertThat(((GameException) e).getErrorCode())
+                                .isEqualTo(ErrorCode.INVALID_CARD));
+            }
+
+            @Test
+            @DisplayName("canExtend 가 false 를 반환하면 INVALID_EXTEND 예외가 발생한다")
+            void throws_invalid_extend_when_can_extend_fails() {
+                Card extCard = new Card(Suit.CLUB, Rank.KING);
+                List<Card> hand = new ArrayList<>(List.of(extCard));
+                RoundState state = buildStateWithMeld(hand, "meld-1");
+
+                List<Card> extCards = List.of(extCard);
+                ExtendRequest request = new ExtendRequest("meld-1", extCards, toHonestDeclared(extCards));
+
+                when(meldValidationService.canExtend(any(), any(), any())).thenReturn(false);
+
+                assertThatThrownBy(() -> roundService.handleExtend(state, PLAYER_ID, request))
+                        .isInstanceOf(GameException.class)
+                        .satisfies(e -> assertThat(((GameException) e).getErrorCode())
+                                .isEqualTo(ErrorCode.INVALID_EXTEND));
+            }
+        }
+
+        @Nested
+        @DisplayName("고잉아웃")
+        class GoingOut {
+
+            @Test
+            @DisplayName("확장 후 손패가 비어지면 GOING_OUT 종료 조건이 설정된다")
+            void going_out_when_hand_empty_after_extend() {
+                Card extCard = new Card(Suit.CLUB, Rank.KING);
+                List<Card> hand = new ArrayList<>(List.of(extCard));
+                RoundState state = buildStateWithMeld(hand, "meld-1");
+
+                List<Card> extCards = List.of(extCard);
+                ExtendRequest request = new ExtendRequest("meld-1", extCards, toHonestDeclared(extCards));
+
+                when(meldValidationService.canExtend(any(), any(), any())).thenReturn(true);
+
+                RoundState result = roundService.handleExtend(state, PLAYER_ID, request);
+
+                assertThat(result.getEndCondition()).isEqualTo(RoundEndCondition.GOING_OUT);
+                assertThat(result.getPlayerStates().get(PLAYER_ID).getHand()).isEmpty();
+            }
+
+            @Test
+            @DisplayName("확장 후 손패가 남아있으면 endCondition 이 null 이다")
+            void no_going_out_when_hand_not_empty_after_extend() {
+                Card extCard = new Card(Suit.CLUB, Rank.KING);
+                Card remaining = new Card(Suit.HEART, Rank.TWO);
+                List<Card> hand = new ArrayList<>(List.of(extCard, remaining));
+                RoundState state = buildStateWithMeld(hand, "meld-1");
+
+                List<Card> extCards = List.of(extCard);
+                ExtendRequest request = new ExtendRequest("meld-1", extCards, toHonestDeclared(extCards));
+
+                when(meldValidationService.canExtend(any(), any(), any())).thenReturn(true);
+
+                RoundState result = roundService.handleExtend(state, PLAYER_ID, request);
+
+                assertThat(result.getEndCondition()).isNull();
+            }
+        }
+
+        @Nested
+        @DisplayName("정상 처리")
+        class HappyPath {
+
+            @Test
+            @DisplayName("확장 성공 시 카드가 해당 멜드의 extensions 에 누적된다")
+            void extended_cards_accumulated_in_meld_extensions() {
+                Card extCard = new Card(Suit.CLUB, Rank.KING);
+                List<Card> hand = new ArrayList<>(List.of(extCard, new Card(Suit.HEART, Rank.TWO)));
+                RoundState state = buildStateWithMeld(hand, "meld-1");
+
+                List<Card> extCards = List.of(extCard);
+                ExtendRequest request = new ExtendRequest("meld-1", extCards, toHonestDeclared(extCards));
+
+                when(meldValidationService.canExtend(any(), any(), any())).thenReturn(true);
+
+                RoundState result = roundService.handleExtend(state, PLAYER_ID, request);
+
+                Meld meld = result.getTableMelds().get(0);
+                assertThat(meld.getExtensions()).containsKey(PLAYER_ID);
+                assertThat(meld.getExtensions().get(PLAYER_ID)).containsExactlyElementsOf(extCards);
+            }
+
+            @Test
+            @DisplayName("같은 멜드에 두 번 확장하면 extensions 에 누적된다")
+            void second_extend_on_same_meld_accumulates() {
+                Card extCard1 = new Card(Suit.CLUB, Rank.KING);
+                Card extCard2 = new Card(Suit.DIAMOND, Rank.KING);
+                List<Card> hand = new ArrayList<>(List.of(extCard1, extCard2));
+                RoundState state = buildStateWithMeld(hand, "meld-1");
+
+                when(meldValidationService.canExtend(any(), any(), any())).thenReturn(true);
+
+                // 첫 번째 확장
+                List<Card> ext1 = List.of(extCard1);
+                roundService.handleExtend(state, PLAYER_ID,
+                        new ExtendRequest("meld-1", ext1, toHonestDeclared(ext1)));
+
+                // 두 번째 확장
+                List<Card> ext2 = List.of(extCard2);
+                RoundState result = roundService.handleExtend(state, PLAYER_ID,
+                        new ExtendRequest("meld-1", ext2, toHonestDeclared(ext2)));
+
+                Meld meld = result.getTableMelds().get(0);
+                assertThat(meld.getExtensions().get(PLAYER_ID))
+                        .containsExactlyInAnyOrder(extCard1, extCard2);
+            }
+
+            @Test
+            @DisplayName("확장 성공 시 lastDoubtableMeldId 가 해당 멜드 ID 로 설정된다")
+            void last_doubtable_meld_id_updated_after_extend() {
+                Card extCard = new Card(Suit.CLUB, Rank.KING);
+                List<Card> hand = new ArrayList<>(List.of(extCard, new Card(Suit.HEART, Rank.TWO)));
+                RoundState state = buildStateWithMeld(hand, "meld-1");
+
+                List<Card> extCards = List.of(extCard);
+                ExtendRequest request = new ExtendRequest("meld-1", extCards, toHonestDeclared(extCards));
+
+                when(meldValidationService.canExtend(any(), any(), any())).thenReturn(true);
+
+                RoundState result = roundService.handleExtend(state, PLAYER_ID, request);
+
+                assertThat(result.getLastDoubtableMeldId()).isEqualTo("meld-1");
+            }
+
+            @Test
+            @DisplayName("확장 성공 시 actualCards 가 손패에서 제거된다")
+            void actual_cards_removed_from_hand_after_extend() {
+                Card extCard = new Card(Suit.CLUB, Rank.KING);
+                Card keepCard = new Card(Suit.HEART, Rank.TWO);
+                List<Card> hand = new ArrayList<>(List.of(extCard, keepCard));
+                RoundState state = buildStateWithMeld(hand, "meld-1");
+
+                List<Card> extCards = List.of(extCard);
+                ExtendRequest request = new ExtendRequest("meld-1", extCards, toHonestDeclared(extCards));
+
+                when(meldValidationService.canExtend(any(), any(), any())).thenReturn(true);
+
+                RoundState result = roundService.handleExtend(state, PLAYER_ID, request);
+
+                List<Card> handAfter = result.getPlayerStates().get(PLAYER_ID).getHand();
+                assertThat(handAfter).doesNotContain(extCard);
+                assertThat(handAfter).contains(keepCard);
             }
         }
     }

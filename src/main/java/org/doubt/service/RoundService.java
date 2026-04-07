@@ -4,10 +4,13 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.doubt.constant.DrawSource;
 import org.doubt.constant.ErrorCode;
+import org.doubt.constant.MeldType;
 import org.doubt.constant.PlayerStatus;
 import org.doubt.constant.RoundEndCondition;
 import org.doubt.constant.TurnPhase;
 import org.doubt.dto.Card;
+import org.doubt.dto.DeclaredCard;
+import org.doubt.dto.Meld;
 import org.doubt.dto.PlayerRoundState;
 import org.doubt.dto.RoundState;
 import org.doubt.dto.request.DiscardRequest;
@@ -26,6 +29,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * 라운드 진행 오케스트레이션 서비스
@@ -147,14 +151,102 @@ public class RoundService {
         return state;
     }
 
-    /** 새 멜드 내려놓기 처리 */
+    /**
+     * 새 멜드 내려놓기 처리
+     *
+     * <p>ruleBook §3·§5.2·§6:
+     * 손패에서 카드를 꺼내 SET·STRAIGHT·SOLO_SEVEN 중 하나의 멜드를 완성.
+     * 거짓말 멜드 가능(최대 1장 허위), 단 거짓말 시 손패가 0장이 되는 순간 고잉아웃 불가.</p>
+     */
     public RoundState handleMeld(RoundState state, String playerId, MeldRequest request) {
-        return null;
+        validateCurrentPlayer(state, playerId);
+        validatePhase(state, TurnPhase.ACTION);
+
+        List<Card> actualCards = request.actualCards();
+        List<DeclaredCard> declaredCards = request.declaredCards();
+        MeldType type = request.type();
+
+        PlayerRoundState playerState = state.getPlayerStates().get(playerId);
+        validateCardsInHand(playerState.getHand(), actualCards);
+
+        if (!meldValidationService.validateMeld(actualCards, declaredCards, type)) {
+            throw new GameException(ErrorCode.INVALID_MELD);
+        }
+
+        // 거짓말 멜드 시 손패가 0장이 될 경우 고잉아웃 불가 (ruleBook §6)
+        boolean bluff = isBluffMeld(actualCards, declaredCards);
+        if (bluff) {
+            List<Card> handAfter = handAfterRemoval(playerState.getHand(), actualCards);
+            if (handAfter.isEmpty()) {
+                throw new GameException(ErrorCode.CANNOT_GOING_OUT);
+            }
+        }
+
+        removeCardsFromHand(playerState, actualCards);
+
+        Meld meld = Meld.create(
+                UUID.randomUUID().toString(), playerId, type,
+                new ArrayList<>(actualCards), new ArrayList<>(declaredCards), bluff);
+        state.getTableMelds().add(meld);
+        state.setLastDoubtableMeldId(meld.getId());
+
+        playerState.setHasMeldedThisTurn(true);
+        playerState.setHasEverMelded(true);
+
+        // 손패 소진 → 고잉아웃 (거짓말 없는 경우만, 위에서 거짓말+빈 손 차단됨)
+        if (playerState.getHand().isEmpty()) {
+            state.setEndCondition(RoundEndCondition.GOING_OUT);
+            log.info("[Round] GOING_OUT via meld playerId={}", playerId);
+        }
+
+        return state;
     }
 
-    /** 기존 멜드 확장 처리 */
+    /**
+     * 기존 멜드 확장 처리
+     *
+     * <p>ruleBook §3.4·§5.2:
+     * 이번 턴에 1건 이상 멜드를 완성한 플레이어만 확장 가능.
+     * 확장 카드는 거짓말 불가(실제 = 선언 카드).</p>
+     */
     public RoundState handleExtend(RoundState state, String playerId, ExtendRequest request) {
-        return null;
+        validateCurrentPlayer(state, playerId);
+        validatePhase(state, TurnPhase.ACTION);
+
+        PlayerRoundState playerState = state.getPlayerStates().get(playerId);
+
+        // 이번 턴에 1건 이상 멜드한 플레이어만 확장 가능 (ruleBook §3.4, §5.2)
+        if (!playerState.isHasMeldedThisTurn()) {
+            throw new GameException(ErrorCode.INVALID_EXTEND);
+        }
+
+        Meld meld = findMeldById(state, request.meldId());
+
+        List<Card> actualCards = request.actualCards();
+        List<DeclaredCard> declaredCards = request.declaredCards();
+
+        validateCardsInHand(playerState.getHand(), actualCards);
+
+        if (!meldValidationService.canExtend(meld, actualCards, declaredCards)) {
+            throw new GameException(ErrorCode.INVALID_EXTEND);
+        }
+
+        removeCardsFromHand(playerState, actualCards);
+
+        // 확장 카드를 extensions 맵에 누적 (동일 플레이어가 같은 멜드에 여러 번 확장 가능)
+        meld.getExtensions().merge(playerId, new ArrayList<>(actualCards), (existing, added) -> {
+            existing.addAll(added);
+            return existing;
+        });
+        state.setLastDoubtableMeldId(meld.getId());
+
+        // 확장은 거짓말 불가 → 손패 소진 시 고잉아웃
+        if (playerState.getHand().isEmpty()) {
+            state.setEndCondition(RoundEndCondition.GOING_OUT);
+            log.info("[Round] GOING_OUT via extend playerId={}", playerId);
+        }
+
+        return state;
     }
 
     /** 버리기 처리 (버린 후 땡큐 타이머 5초 시작) */
@@ -214,6 +306,51 @@ public class RoundService {
     /** 파산 여부 체크 (핸드 10장 이상이면 즉시 탈락) */
     private boolean isBankrupt(RoundState state, String playerId) {
         return state.getPlayerStates().get(playerId).getHand().size() >= 10;
+    }
+
+    /** 플레이어 손패에 required 카드가 모두 있는지 확인 (없으면 INVALID_CARD) */
+    private void validateCardsInHand(List<Card> hand, List<Card> required) {
+        List<Card> handCopy = new ArrayList<>(hand);
+        for (Card card : required) {
+            if (!handCopy.remove(card)) {
+                throw new GameException(ErrorCode.INVALID_CARD);
+            }
+        }
+    }
+
+    /** 손패에서 cards를 1장씩 제거 (이미 validateCardsInHand 를 통과한 카드만 전달) */
+    private void removeCardsFromHand(PlayerRoundState playerState, List<Card> cards) {
+        List<Card> hand = playerState.getHand();
+        for (Card card : cards) {
+            hand.remove(card);
+        }
+    }
+
+    /** cards 를 제거했을 때 남는 손패를 반환 (원본 불변) */
+    private List<Card> handAfterRemoval(List<Card> hand, List<Card> toRemove) {
+        List<Card> copy = new ArrayList<>(hand);
+        toRemove.forEach(copy::remove);
+        return copy;
+    }
+
+    /** 실제 카드와 선언 카드 중 1장이라도 다르면 거짓말 멜드 */
+    private boolean isBluffMeld(List<Card> actualCards, List<DeclaredCard> declaredCards) {
+        for (int i = 0; i < actualCards.size(); i++) {
+            Card actual = actualCards.get(i);
+            DeclaredCard declared = declaredCards.get(i);
+            if (actual.rank() != declared.declaredRank() || actual.suit() != declared.declaredSuit()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** meldId 로 테이블 멜드를 찾아 반환 (없으면 MELD_NOT_FOUND) */
+    private Meld findMeldById(RoundState state, String meldId) {
+        return state.getTableMelds().stream()
+                .filter(m -> meldId.equals(m.getId()))
+                .findFirst()
+                .orElseThrow(() -> new GameException(ErrorCode.MELD_NOT_FOUND));
     }
 
     private void validateCurrentPlayer(RoundState state, String playerId) {

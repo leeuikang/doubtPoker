@@ -16,8 +16,8 @@ import java.util.List;
  * - type         : SET / STRAIGHT / SOLO_SEVEN
  */
 public record MeldRequest(
-        @NotNull @Size(min = 3, max = 13) @Valid List<Card> actualCards,
-        @NotNull @Size(min = 3, max = 13) @Valid List<DeclaredCard> declaredCards,
+        @NotNull @Size(min = 1, max = 13) List<@NotNull @Valid Card> actualCards,
+        @NotNull @Size(min = 1, max = 13) List<@NotNull @Valid DeclaredCard> declaredCards,
         @NotNull MeldType type
 ) {
 }
