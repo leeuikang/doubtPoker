@@ -552,8 +552,8 @@ class RoundServiceTest {
                 assertThat(prs.getHand()).hasSize(10);
                 assertThat(prs.isHasBankrupted()).isTrue();
                 assertThat(prs.getStatus()).isEqualTo(PlayerStatus.ELIMINATED);
-                // 파산은 해당 플레이어만 탈락 — 라운드 전체 종료 조건은 item 9에서 처리
-                assertThat(result.getEndCondition()).isNull();
+                // 파산 후 1인 게임이므로 ACTIVE 플레이어가 0명 → BANKRUPTCY 종료 조건 설정
+                assertThat(result.getEndCondition()).isEqualTo(RoundEndCondition.BANKRUPTCY);
             }
 
             @Test
@@ -569,7 +569,7 @@ class RoundServiceTest {
                 PlayerRoundState prs = result.getPlayerStates().get(PLAYER_ID);
                 assertThat(prs.isHasBankrupted()).isTrue();
                 assertThat(prs.getStatus()).isEqualTo(PlayerStatus.ELIMINATED);
-                assertThat(result.getEndCondition()).isNull();
+                assertThat(result.getEndCondition()).isEqualTo(RoundEndCondition.BANKRUPTCY);
             }
 
             @Test
@@ -613,7 +613,7 @@ class RoundServiceTest {
                 PlayerRoundState prs = result.getPlayerStates().get(PLAYER_ID);
                 assertThat(prs.isHasBankrupted()).isTrue();
                 assertThat(prs.getStatus()).isEqualTo(PlayerStatus.ELIMINATED);
-                assertThat(result.getEndCondition()).isNull();
+                assertThat(result.getEndCondition()).isEqualTo(RoundEndCondition.BANKRUPTCY);
             }
         }
     }
@@ -2147,6 +2147,574 @@ class RoundServiceTest {
             roundService.handleRevealBluff(state, P1, new RevealBluffRequest("meld-1"));
 
             assertThat(state.getPlayerStates().get(P2).getHand()).hasSize(p2HandBefore);
+        }
+    }
+
+
+    // ----------------------------------------------------------------
+    // resolveRound 테스트
+    // ----------------------------------------------------------------
+
+    @Nested
+    @DisplayName("resolveRound")
+    class ResolveRound {
+
+        private static final String P1 = "p1";
+        private static final String P2 = "p2";
+        private static final String P3 = "p3";
+
+        /** endCondition 과 playerStates 를 직접 지정하여 RoundState 를 조립한다 */
+        private RoundState buildResolveState(RoundEndCondition endCondition,
+                                             Map<String, PlayerRoundState> playerStates) {
+            RoundState state = new RoundState();
+            state.setEndCondition(endCondition);
+            state.setPlayerStates(playerStates);
+            state.setTurnOrder(new ArrayList<>(playerStates.keySet()));
+            state.setCurrentPlayerIndex(0);
+            state.setTurnPhase(TurnPhase.ACTION);
+            state.setStockPile(makeCards(5));
+            state.setDiscardPile(makeCards(2));
+            state.setStockRefillCount(0);
+            state.setTableMelds(new ArrayList<>());
+            state.setLastDoubtableMeldId(null);
+            state.setThankYouTimerSec(0);
+            return state;
+        }
+
+        /** PlayerRoundState 조립 헬퍼 */
+        private PlayerRoundState makePlayerState(String playerId, PlayerStatus status,
+                                                  List<Card> hand) {
+            PlayerRoundState prs = new PlayerRoundState();
+            prs.setPlayerId(playerId);
+            prs.setStatus(status);
+            prs.setHand(new ArrayList<>(hand));
+            prs.setHasMeldedThisTurn(false);
+            prs.setHasEverMelded(false);
+            prs.setHasDeclaredStop(false);
+            prs.setHasBankrupted(false);
+            prs.setDisconnectCount(0);
+            return prs;
+        }
+
+        @Test
+        @DisplayName("GOING_OUT: 손패가 빈 ACTIVE 플레이어가 승자로 결정된다")
+        void going_out_active_empty_hand_is_winner() {
+            Map<String, PlayerRoundState> ps = new LinkedHashMap<>();
+            ps.put(P1, makePlayerState(P1, PlayerStatus.ACTIVE, List.of()));   // 손패 0장
+            ps.put(P2, makePlayerState(P2, PlayerStatus.ACTIVE, makeCards(3)));
+
+            RoundState state = buildResolveState(RoundEndCondition.GOING_OUT, ps);
+
+            when(scoreService.calculateRoundScoreDelta(any(), any(), any()))
+                    .thenAnswer(inv -> {
+                        @SuppressWarnings("unchecked")
+                        List<String> winners = inv.getArgument(1);
+                        assertThat(winners).containsExactly(P1);
+                        return Map.of(P1, 10, P2, -10);
+                    });
+
+            roundService.resolveRound(state);
+        }
+
+        @Test
+        @DisplayName("GOING_OUT: ELIMINATED 플레이어는 손패가 비어도 승자가 되지 않는다")
+        void going_out_eliminated_empty_hand_not_winner() {
+            Map<String, PlayerRoundState> ps = new LinkedHashMap<>();
+            ps.put(P1, makePlayerState(P1, PlayerStatus.ELIMINATED, List.of())); // ELIMINATED
+            ps.put(P2, makePlayerState(P2, PlayerStatus.ACTIVE, List.of()));      // ACTIVE + 빈 손패
+
+            RoundState state = buildResolveState(RoundEndCondition.GOING_OUT, ps);
+
+            when(scoreService.calculateRoundScoreDelta(any(), any(), any()))
+                    .thenAnswer(inv -> {
+                        @SuppressWarnings("unchecked")
+                        List<String> winners = inv.getArgument(1);
+                        assertThat(winners).containsExactly(P2);
+                        assertThat(winners).doesNotContain(P1);
+                        return Map.of();
+                    });
+
+            roundService.resolveRound(state);
+        }
+
+        @Test
+        @DisplayName("STOP: 핸드 점수가 가장 낮은 ACTIVE 플레이어가 승자가 된다")
+        void stop_lowest_score_player_is_winner() {
+            List<Card> p1Hand = makeCards(2);
+            List<Card> p2Hand = makeCards(3);
+
+            Map<String, PlayerRoundState> ps = new LinkedHashMap<>();
+            ps.put(P1, makePlayerState(P1, PlayerStatus.ACTIVE, p1Hand));
+            ps.put(P2, makePlayerState(P2, PlayerStatus.ACTIVE, p2Hand));
+
+            RoundState state = buildResolveState(RoundEndCondition.STOP, ps);
+
+            when(scoreService.calculateHandScore(p1Hand)).thenReturn(5);
+            when(scoreService.calculateHandScore(p2Hand)).thenReturn(15);
+            when(scoreService.calculateRoundScoreDelta(any(), any(), any()))
+                    .thenAnswer(inv -> {
+                        @SuppressWarnings("unchecked")
+                        List<String> winners = inv.getArgument(1);
+                        assertThat(winners).containsExactly(P1);
+                        return Map.of(P1, 15, P2, -15);
+                    });
+
+            roundService.resolveRound(state);
+        }
+
+        @Test
+        @DisplayName("STOP: 동점 최솟값이면 두 플레이어 모두 승자가 된다")
+        void stop_tied_minimum_score_both_winners() {
+            List<Card> p1Hand = makeCards(2);
+            List<Card> p2Hand = makeCards(3);
+
+            Map<String, PlayerRoundState> ps = new LinkedHashMap<>();
+            ps.put(P1, makePlayerState(P1, PlayerStatus.ACTIVE, p1Hand));
+            ps.put(P2, makePlayerState(P2, PlayerStatus.ACTIVE, p2Hand));
+
+            RoundState state = buildResolveState(RoundEndCondition.STOP, ps);
+
+            when(scoreService.calculateHandScore(p1Hand)).thenReturn(10);
+            when(scoreService.calculateHandScore(p2Hand)).thenReturn(10);
+            when(scoreService.calculateRoundScoreDelta(any(), any(), any()))
+                    .thenAnswer(inv -> {
+                        @SuppressWarnings("unchecked")
+                        List<String> winners = inv.getArgument(1);
+                        assertThat(winners).containsExactlyInAnyOrder(P1, P2);
+                        return Map.of();
+                    });
+
+            roundService.resolveRound(state);
+        }
+
+        @Test
+        @DisplayName("STOCK_DEPLETED: STOP 과 동일하게 최솟값 보유자가 승자가 된다")
+        void stock_depleted_lowest_score_is_winner() {
+            List<Card> p1Hand = makeCards(2);
+            List<Card> p2Hand = makeCards(3);
+
+            Map<String, PlayerRoundState> ps = new LinkedHashMap<>();
+            ps.put(P1, makePlayerState(P1, PlayerStatus.ACTIVE, p1Hand));
+            ps.put(P2, makePlayerState(P2, PlayerStatus.ACTIVE, p2Hand));
+
+            RoundState state = buildResolveState(RoundEndCondition.STOCK_DEPLETED, ps);
+
+            when(scoreService.calculateHandScore(p1Hand)).thenReturn(3);
+            when(scoreService.calculateHandScore(p2Hand)).thenReturn(20);
+            when(scoreService.calculateRoundScoreDelta(any(), any(), any()))
+                    .thenAnswer(inv -> {
+                        @SuppressWarnings("unchecked")
+                        List<String> winners = inv.getArgument(1);
+                        assertThat(winners).containsExactly(P1);
+                        return Map.of(P1, 20, P2, -20);
+                    });
+
+            roundService.resolveRound(state);
+        }
+
+        @Test
+        @DisplayName("BANKRUPTCY: ACTIVE 플레이어 전원이 승자이고 ELIMINATED 는 제외된다")
+        void bankruptcy_all_active_players_are_winners() {
+            Map<String, PlayerRoundState> ps = new LinkedHashMap<>();
+            ps.put(P1, makePlayerState(P1, PlayerStatus.ACTIVE, makeCards(3)));
+            ps.put(P2, makePlayerState(P2, PlayerStatus.ACTIVE, makeCards(4)));
+            ps.put(P3, makePlayerState(P3, PlayerStatus.ELIMINATED, makeCards(10)));
+
+            RoundState state = buildResolveState(RoundEndCondition.BANKRUPTCY, ps);
+
+            when(scoreService.calculateRoundScoreDelta(any(), any(), any()))
+                    .thenAnswer(inv -> {
+                        @SuppressWarnings("unchecked")
+                        List<String> winners = inv.getArgument(1);
+                        assertThat(winners).containsExactlyInAnyOrder(P1, P2);
+                        assertThat(winners).doesNotContain(P3);
+                        return Map.of(P1, 5, P2, 5, P3, -10);
+                    });
+
+            roundService.resolveRound(state);
+        }
+
+        @Test
+        @DisplayName("반환값은 scoreService.calculateRoundScoreDelta 가 반환한 Map 그대로이다")
+        void return_value_equals_score_service_result() {
+            Map<String, PlayerRoundState> ps = new LinkedHashMap<>();
+            ps.put(P1, makePlayerState(P1, PlayerStatus.ACTIVE, List.of()));
+            ps.put(P2, makePlayerState(P2, PlayerStatus.ACTIVE, makeCards(3)));
+
+            RoundState state = buildResolveState(RoundEndCondition.GOING_OUT, ps);
+
+            Map<String, Integer> expectedDelta = Map.of(P1, 20, P2, -20);
+            when(scoreService.calculateRoundScoreDelta(any(), any(), any()))
+                    .thenReturn(expectedDelta);
+
+            Map<String, Integer> result = roundService.resolveRound(state);
+
+            assertThat(result).isEqualTo(expectedDelta);
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // BankruptcyEndCondition 테스트 (handleDraw 를 통한 간접 테스트)
+    // ----------------------------------------------------------------
+
+    @Nested
+    @DisplayName("BankruptcyEndCondition")
+    class BankruptcyEndCondition {
+
+        private static final String P1 = "p1";
+        private static final String P2 = "p2";
+        private static final String P3 = "p3";
+
+        /**
+         * 2인 게임: p1 이 DRAW 단계, p1 손패는 p1Hand, p2 손패는 4장.
+         * 스톡에 카드가 있어 드로우 가능.
+         */
+        private RoundState buildTwoPlayerDrawState(String p1, String p2, List<Card> p1Hand) {
+            RoundState state = new RoundState();
+            state.setTurnOrder(new ArrayList<>(List.of(p1, p2)));
+            state.setCurrentPlayerIndex(0);
+            state.setTurnPhase(TurnPhase.DRAW);
+            state.setStockPile(makeCards(5));
+            state.setDiscardPile(makeCards(2));
+            state.setStockRefillCount(0);
+            state.setEndCondition(null);
+            state.setTableMelds(new ArrayList<>());
+            state.setLastDoubtableMeldId(null);
+            state.setThankYouTimerSec(0);
+
+            Map<String, PlayerRoundState> ps = new LinkedHashMap<>();
+            for (String pid : List.of(p1, p2)) {
+                PlayerRoundState prs = new PlayerRoundState();
+                prs.setPlayerId(pid);
+                prs.setHand(pid.equals(p1) ? new ArrayList<>(p1Hand) : makeCards(4));
+                prs.setStatus(PlayerStatus.ACTIVE);
+                prs.setHasMeldedThisTurn(false);
+                prs.setHasEverMelded(false);
+                prs.setHasDeclaredStop(false);
+                prs.setHasBankrupted(false);
+                prs.setDisconnectCount(0);
+                ps.put(pid, prs);
+            }
+            state.setPlayerStates(ps);
+            return state;
+        }
+
+        /**
+         * 3인 게임: p1 이 DRAW 단계, p1 손패는 p1Hand, p2/p3 손패는 4장.
+         */
+        private RoundState buildThreePlayerDrawState(String p1, String p2, String p3,
+                                                      List<Card> p1Hand) {
+            RoundState state = new RoundState();
+            state.setTurnOrder(new ArrayList<>(List.of(p1, p2, p3)));
+            state.setCurrentPlayerIndex(0);
+            state.setTurnPhase(TurnPhase.DRAW);
+            state.setStockPile(makeCards(5));
+            state.setDiscardPile(makeCards(2));
+            state.setStockRefillCount(0);
+            state.setEndCondition(null);
+            state.setTableMelds(new ArrayList<>());
+            state.setLastDoubtableMeldId(null);
+            state.setThankYouTimerSec(0);
+
+            Map<String, PlayerRoundState> ps = new LinkedHashMap<>();
+            for (String pid : List.of(p1, p2, p3)) {
+                PlayerRoundState prs = new PlayerRoundState();
+                prs.setPlayerId(pid);
+                prs.setHand(pid.equals(p1) ? new ArrayList<>(p1Hand) : makeCards(4));
+                prs.setStatus(PlayerStatus.ACTIVE);
+                prs.setHasMeldedThisTurn(false);
+                prs.setHasEverMelded(false);
+                prs.setHasDeclaredStop(false);
+                prs.setHasBankrupted(false);
+                prs.setDisconnectCount(0);
+                ps.put(pid, prs);
+            }
+            state.setPlayerStates(ps);
+            return state;
+        }
+
+        @Test
+        @DisplayName("2인 게임: p1 이 파산하면 p2 만 ACTIVE 남아 endCondition 이 BANKRUPTCY 가 된다")
+        void two_player_bankruptcy_sets_end_condition() {
+            // p1 이 9장을 들고 있고 STOCK 드로우로 10장이 되면 파산
+            RoundState state = buildTwoPlayerDrawState(P1, P2, makeCards(9));
+
+            roundService.handleDraw(state, P1, new DrawRequest(DrawSource.STOCK));
+
+            assertThat(state.getPlayerStates().get(P1).getStatus())
+                    .isEqualTo(PlayerStatus.ELIMINATED);
+            assertThat(state.getEndCondition()).isEqualTo(RoundEndCondition.BANKRUPTCY);
+        }
+
+        @Test
+        @DisplayName("3인 게임: p1 이 파산해도 p2, p3 가 ACTIVE 이면 endCondition 이 null 이다")
+        void three_player_bankruptcy_does_not_set_end_condition() {
+            // p1 이 9장 → 드로우 후 10장 → 파산, 그러나 p2/p3 아직 ACTIVE
+            RoundState state = buildThreePlayerDrawState(P1, P2, P3, makeCards(9));
+
+            roundService.handleDraw(state, P1, new DrawRequest(DrawSource.STOCK));
+
+            assertThat(state.getPlayerStates().get(P1).getStatus())
+                    .isEqualTo(PlayerStatus.ELIMINATED);
+            assertThat(state.getEndCondition()).isNull();
+        }
+
+        @Test
+        @DisplayName("endCondition 이 이미 GOING_OUT 이면 파산 체크로 덮어쓰지 않는다")
+        void bankruptcy_check_does_not_overwrite_existing_end_condition() {
+            // endCondition 을 미리 GOING_OUT 으로 설정
+            RoundState state = buildTwoPlayerDrawState(P1, P2, makeCards(9));
+            state.setEndCondition(RoundEndCondition.GOING_OUT);
+
+            roundService.handleDraw(state, P1, new DrawRequest(DrawSource.STOCK));
+
+            // GOING_OUT 이 유지되어야 한다
+            assertThat(state.getEndCondition()).isEqualTo(RoundEndCondition.GOING_OUT);
+        }
+    }
+
+
+    // ----------------------------------------------------------------
+    // HandleTurnTimeout 테스트
+    // ----------------------------------------------------------------
+
+    @Nested
+    @DisplayName("handleTurnTimeout")
+    class HandleTurnTimeout {
+
+        private static final String P1 = "p1";
+        private static final String P2 = "p2";
+
+        // ----------------------------------------------------------------
+        // 헬퍼
+        // ----------------------------------------------------------------
+
+        /** 2인 게임 기본 헬퍼: p1 이 currentPlayer(index 0), 지정 phase */
+        private RoundState buildTimeoutState(TurnPhase phase, List<Card> p1Hand,
+                                             List<Card> stock) {
+            RoundState state = new RoundState();
+            state.setTurnOrder(new ArrayList<>(List.of(P1, P2)));
+            state.setCurrentPlayerIndex(0);
+            state.setTurnPhase(phase);
+            state.setStockPile(new ArrayList<>(stock));
+            state.setDiscardPile(makeCards(2));
+            state.setStockRefillCount(0);
+            state.setEndCondition(null);
+            state.setTableMelds(new ArrayList<>());
+            state.setLastDoubtableMeldId(null);
+            state.setThankYouTimerSec(0);
+
+            Map<String, PlayerRoundState> ps = new LinkedHashMap<>();
+            for (String pid : List.of(P1, P2)) {
+                PlayerRoundState prs = new PlayerRoundState();
+                prs.setPlayerId(pid);
+                prs.setHand(pid.equals(P1) ? new ArrayList<>(p1Hand) : makeCards(4));
+                prs.setStatus(PlayerStatus.ACTIVE);
+                prs.setHasMeldedThisTurn(false);
+                prs.setHasEverMelded(false);
+                prs.setHasDeclaredStop(false);
+                prs.setHasBankrupted(false);
+                prs.setDisconnectCount(0);
+                ps.put(pid, prs);
+            }
+            state.setPlayerStates(ps);
+            return state;
+        }
+
+        /**
+         * 2인 게임: p1 이 DRAW 단계, p1 손패 9장, 스톡 5장 -- 파산 테스트용.
+         */
+        private RoundState buildTwoPlayerDrawState9Cards(String p1, String p2) {
+            RoundState state = new RoundState();
+            state.setTurnOrder(new ArrayList<>(List.of(p1, p2)));
+            state.setCurrentPlayerIndex(0);
+            state.setTurnPhase(TurnPhase.DRAW);
+            state.setStockPile(makeCards(5));
+            state.setDiscardPile(makeCards(2));
+            state.setStockRefillCount(0);
+            state.setEndCondition(null);
+            state.setTableMelds(new ArrayList<>());
+            state.setLastDoubtableMeldId(null);
+            state.setThankYouTimerSec(0);
+
+            Map<String, PlayerRoundState> ps = new LinkedHashMap<>();
+            for (String pid : List.of(p1, p2)) {
+                PlayerRoundState prs = new PlayerRoundState();
+                prs.setPlayerId(pid);
+                prs.setHand(pid.equals(p1) ? makeCards(9) : makeCards(4));
+                prs.setStatus(PlayerStatus.ACTIVE);
+                prs.setHasMeldedThisTurn(false);
+                prs.setHasEverMelded(false);
+                prs.setHasDeclaredStop(false);
+                prs.setHasBankrupted(false);
+                prs.setDisconnectCount(0);
+                ps.put(pid, prs);
+            }
+            state.setPlayerStates(ps);
+            return state;
+        }
+
+        // ----------------------------------------------------------------
+        // 테스트 케이스
+        // ----------------------------------------------------------------
+
+        @Test
+        @DisplayName("endCondition 이 이미 설정된 경우 즉시 반환하며 상태가 변경되지 않는다")
+        void returns_immediately_when_end_condition_already_set() {
+            List<Card> hand = List.of(
+                    new Card(Suit.SPADE, Rank.KING),
+                    new Card(Suit.HEART, Rank.QUEEN)
+            );
+            RoundState state = buildTimeoutState(TurnPhase.DRAW, hand, makeCards(5));
+            state.setEndCondition(RoundEndCondition.GOING_OUT);
+            int originalHandSize = state.getPlayerStates().get(P1).getHand().size();
+
+            roundService.handleTurnTimeout(state, P1);
+
+            assertThat(state.getPlayerStates().get(P1).getHand()).hasSize(originalHandSize);
+            assertThat(state.getEndCondition()).isEqualTo(RoundEndCondition.GOING_OUT);
+        }
+
+        @Test
+        @DisplayName("ELIMINATED 플레이어는 드로우/버림 없이 즉시 반환한다")
+        void returns_immediately_when_player_eliminated() {
+            List<Card> hand = List.of(
+                    new Card(Suit.SPADE, Rank.KING),
+                    new Card(Suit.HEART, Rank.QUEEN)
+            );
+            RoundState state = buildTimeoutState(TurnPhase.DRAW, hand, makeCards(5));
+            state.getPlayerStates().get(P1).setStatus(PlayerStatus.ELIMINATED);
+            int stockSizeBefore = state.getStockPile().size();
+
+            roundService.handleTurnTimeout(state, P1);
+
+            assertThat(state.getStockPile()).hasSize(stockSizeBefore);
+            assertThat(state.getPlayerStates().get(P1).getHand()).hasSize(hand.size());
+        }
+
+        @Test
+        @DisplayName("DRAW 페이즈: 스톡에서 1장 드로우 후 최고 점수 카드를 버린다")
+        void draw_phase_auto_draws_then_discards_highest_card() {
+            Card queen = new Card(Suit.SPADE, Rank.QUEEN);
+            Card two = new Card(Suit.HEART, Rank.TWO);
+            List<Card> hand = new ArrayList<>(List.of(queen, two));
+            Card stockCard = new Card(Suit.CLUB, Rank.THREE);
+            List<Card> stock = new ArrayList<>(List.of(stockCard));
+
+            RoundState state = buildTimeoutState(TurnPhase.DRAW, hand, stock);
+
+            roundService.handleTurnTimeout(state, P1);
+
+            // 드로우(THREE=3) 후 손패 3장 -> QUEEN(12) 버림 -> 최종 2장 남음
+            assertThat(state.getPlayerStates().get(P1).getHand()).hasSize(2);
+            assertThat(state.getDiscardPile()).contains(queen);
+        }
+
+        @Test
+        @DisplayName("ACTION 페이즈: 드로우 없이 바로 최고 점수 카드를 버린다")
+        void action_phase_directly_discards_highest_card() {
+            Card king = new Card(Suit.SPADE, Rank.KING);
+            Card three = new Card(Suit.DIAMOND, Rank.THREE);
+            List<Card> hand = new ArrayList<>(List.of(king, three));
+            List<Card> stock = makeCards(5);
+
+            RoundState state = buildTimeoutState(TurnPhase.ACTION, hand, stock);
+            int stockSizeBefore = state.getStockPile().size();
+
+            roundService.handleTurnTimeout(state, P1);
+
+            assertThat(state.getStockPile()).hasSize(stockSizeBefore);
+            assertThat(state.getDiscardPile()).contains(king);
+            assertThat(state.getPlayerStates().get(P1).getHand()).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("KING(13)이 QUEEN(12)보다 먼저 버려진다")
+        void discards_king_over_queen() {
+            Card king = new Card(Suit.SPADE, Rank.KING);
+            Card queen = new Card(Suit.HEART, Rank.QUEEN);
+            Card ace = new Card(Suit.DIAMOND, Rank.ACE);
+            List<Card> hand = new ArrayList<>(List.of(queen, ace, king));
+
+            RoundState state = buildTimeoutState(TurnPhase.ACTION, hand, makeCards(3));
+
+            roundService.handleTurnTimeout(state, P1);
+
+            assertThat(state.getDiscardPile()).contains(king);
+            assertThat(state.getPlayerStates().get(P1).getHand()).doesNotContain(king);
+        }
+
+        @Test
+        @DisplayName("손패가 모두 SEVEN 이면 첫 번째 카드를 버린다 (폴백)")
+        void discards_first_card_when_all_sevens() {
+            Card seven1 = new Card(Suit.SPADE, Rank.SEVEN);
+            Card seven2 = new Card(Suit.HEART, Rank.SEVEN);
+            Card seven3 = new Card(Suit.DIAMOND, Rank.SEVEN);
+            List<Card> hand = new ArrayList<>(List.of(seven1, seven2, seven3));
+
+            RoundState state = buildTimeoutState(TurnPhase.ACTION, hand, makeCards(3));
+
+            roundService.handleTurnTimeout(state, P1);
+
+            assertThat(state.getDiscardPile()).contains(seven1);
+            assertThat(state.getPlayerStates().get(P1).getHand()).hasSize(2);
+        }
+
+        @Test
+        @DisplayName("버린 후 손패가 비면 endCondition 이 GOING_OUT 으로 설정된다")
+        void going_out_when_last_card_discarded() {
+            Card king = new Card(Suit.SPADE, Rank.KING);
+            List<Card> hand = new ArrayList<>(List.of(king));
+
+            RoundState state = buildTimeoutState(TurnPhase.ACTION, hand, makeCards(3));
+
+            roundService.handleTurnTimeout(state, P1);
+
+            assertThat(state.getEndCondition()).isEqualTo(RoundEndCondition.GOING_OUT);
+            assertThat(state.getPlayerStates().get(P1).getHand()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("정상 버림 후 thankYouTimerSec 이 5가 되고 턴이 전진한다")
+        void normal_discard_sets_thank_you_timer_and_advances_turn() {
+            Card king = new Card(Suit.SPADE, Rank.KING);
+            Card two = new Card(Suit.HEART, Rank.TWO);
+            List<Card> hand = new ArrayList<>(List.of(king, two));
+
+            RoundState state = buildTimeoutState(TurnPhase.ACTION, hand, makeCards(3));
+            int initialIndex = state.getCurrentPlayerIndex();
+
+            roundService.handleTurnTimeout(state, P1);
+
+            assertThat(state.getThankYouTimerSec()).isEqualTo(GameConstants.THANK_YOU_TIMER_DISCARD_SEC);
+            assertThat(state.getCurrentPlayerIndex()).isNotEqualTo(initialIndex);
+            assertThat(state.getTurnPhase()).isEqualTo(TurnPhase.DRAW);
+        }
+
+        @Test
+        @DisplayName("DRAW 페이즈에서 스톡이 비고 stockRefillCount 가 2 이상이면 STOCK_DEPLETED 로 종료된다")
+        void draw_phase_empty_stock_triggers_stock_depleted_when_refill_exhausted() {
+            Card king = new Card(Suit.SPADE, Rank.KING);
+            Card two = new Card(Suit.HEART, Rank.TWO);
+            List<Card> hand = new ArrayList<>(List.of(king, two));
+            RoundState state = buildTimeoutState(TurnPhase.DRAW, hand, new ArrayList<>());
+            state.setStockRefillCount(2);
+
+            roundService.handleTurnTimeout(state, P1);
+
+            assertThat(state.getEndCondition()).isEqualTo(RoundEndCondition.STOCK_DEPLETED);
+        }
+
+        @Test
+        @DisplayName("DRAW 페이즈에서 9장 손패 + 1장 드로우 = 10장 파산, 2인 게임이면 BANKRUPTCY 종료")
+        void draw_phase_bankruptcy_leads_to_bankruptcy_end_condition() {
+            RoundState state = buildTwoPlayerDrawState9Cards(P1, P2);
+
+            roundService.handleTurnTimeout(state, P1);
+
+            assertThat(state.getPlayerStates().get(P1).getStatus())
+                    .isEqualTo(PlayerStatus.ELIMINATED);
+            assertThat(state.getEndCondition()).isEqualTo(RoundEndCondition.BANKRUPTCY);
         }
     }
 

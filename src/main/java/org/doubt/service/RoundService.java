@@ -6,6 +6,7 @@ import org.doubt.constant.DrawSource;
 import org.doubt.constant.ErrorCode;
 import org.doubt.constant.GameConstants;
 import org.doubt.constant.MeldType;
+import org.doubt.constant.Rank;
 import org.doubt.constant.PlayerStatus;
 import org.doubt.constant.RoundEndCondition;
 import org.doubt.constant.TurnPhase;
@@ -27,6 +28,8 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -141,12 +144,12 @@ public class RoundService {
 
         state.setTurnPhase(TurnPhase.ACTION);
 
-        // 파산 체크: 드로우 후 핸드 10장 이상이면 해당 플레이어만 즉시 탈락 (ruleBook §8.4)
-        // 라운드 전체 종료 여부는 item 9(종료 조건) 구현 시 활성 플레이어 수 기반으로 판단
+        // 파산 체크: 드로우 후 핸드 10장 이상이면 해당 플레이어 즉시 탈락 (ruleBook §8.4)
         if (isBankrupt(state, playerId)) {
             playerState.setHasBankrupted(true);
             playerState.setStatus(PlayerStatus.ELIMINATED);
             log.info("[Round] BANKRUPTCY playerId={} handSize={}", playerId, playerState.getHand().size());
+            checkBankruptcyEndCondition(state);
         }
 
         return state;
@@ -418,9 +421,72 @@ public class RoundService {
         return state;
     }
 
-    /** 턴 타임아웃 처리 (20초 초과: 드로우 후 가장 높은 카드 버림) */
+    /**
+     * 턴 타임아웃 자동 처리
+     *
+     * <p>ruleBook §5: 20초 초과 시 자동 드로우 후 7 제외 최고 점수 카드 버림.</p>
+     * <ol>
+     *   <li>이미 종료된 라운드이거나 해당 플레이어가 ACTIVE 가 아니면 무시.</li>
+     *   <li>DRAW 페이즈면 스톡에서 자동 드로우(파산 체크 포함).</li>
+     *   <li>7을 제외한 최고 점수 카드를 버림더미에 추가하고 턴 전진.</li>
+     *   <li>버림으로 손패가 빈 경우 GOING_OUT 처리.</li>
+     * </ol>
+     */
     public RoundState handleTurnTimeout(RoundState state, String playerId) {
-        return null;
+        if (state.getEndCondition() != null) return state;
+
+        PlayerRoundState playerState = state.getPlayerStates().get(playerId);
+        if (playerState == null || playerState.getStatus() != PlayerStatus.ACTIVE) return state;
+
+        // DRAW 페이즈: 스톡에서 자동 드로우
+        if (state.getTurnPhase() == TurnPhase.DRAW) {
+            if (state.getStockPile().isEmpty()) {
+                refillStock(state);
+                if (state.getEndCondition() != null) return state;
+            }
+            if (!state.getStockPile().isEmpty()) {
+                Card drawn = state.getStockPile().remove(0);
+                playerState.getHand().add(drawn);
+                state.setTurnPhase(TurnPhase.ACTION);
+                if (isBankrupt(state, playerId)) {
+                    playerState.setHasBankrupted(true);
+                    playerState.setStatus(PlayerStatus.ELIMINATED);
+                    log.info("[Round] BANKRUPTCY (timeout draw) playerId={}", playerId);
+                    checkBankruptcyEndCondition(state);
+                    if (state.getEndCondition() != null) return state;
+                }
+            }
+        }
+
+        // 7 제외 최고 점수 카드 자동 버림
+        Card toDiscard = selectAutoDiscardCard(playerState.getHand());
+        if (toDiscard == null) return state;
+
+        playerState.getHand().remove(toDiscard);
+        state.getDiscardPile().add(toDiscard);
+
+        if (playerState.getHand().isEmpty()) {
+            state.setEndCondition(RoundEndCondition.GOING_OUT);
+            log.info("[Round] GOING_OUT via timeout discard playerId={}", playerId);
+            return state;
+        }
+
+        state.setThankYouTimerSec(GameConstants.THANK_YOU_TIMER_DISCARD_SEC);
+        advanceTurn(state);
+        log.info("[Round] TURN_TIMEOUT playerId={} discarded={}", playerId, toDiscard);
+        return state;
+    }
+
+    /**
+     * 자동 버릴 카드 선택: 7 제외 최고 점수 카드.
+     * 손패가 모두 7이면 첫 번째 카드를 반환한다.
+     */
+    private Card selectAutoDiscardCard(List<Card> hand) {
+        if (hand.isEmpty()) return null;
+        return hand.stream()
+                .filter(c -> c.rank() != Rank.SEVEN)
+                .max(Comparator.comparingInt(c -> c.rank().getBasePoint()))
+                .orElse(hand.get(0));
     }
 
     // ----------------------------------------------------------------
@@ -445,6 +511,77 @@ public class RoundService {
         state.setDiscardPile(new ArrayList<>(List.of(topDiscard)));
         state.setStockRefillCount(state.getStockRefillCount() + 1);
         log.info("[Round] stock refilled count={}", state.getStockRefillCount());
+    }
+
+    /**
+     * 라운드 종료 처리: 승자 결정 후 ScoreService 에 점수 델타 계산을 위임한다.
+     *
+     * <p>endCondition 이 null 이 아닌 상태에서 호출해야 한다.</p>
+     *
+     * @return playerId → 점수 변화량 (양수=획득, 음수=차감)
+     */
+    public Map<String, Integer> resolveRound(RoundState state) {
+        List<String> winnerIds = determineWinners(state);
+        log.info("[Round] resolved endCondition={} winners={}", state.getEndCondition(), winnerIds);
+        return scoreService.calculateRoundScoreDelta(
+                state.getPlayerStates(), winnerIds, state.getEndCondition());
+    }
+
+    /** endCondition 별 승자 ID 목록 결정 */
+    private List<String> determineWinners(RoundState state) {
+        return switch (state.getEndCondition()) {
+            case GOING_OUT            -> findGoingOutWinners(state);
+            case STOP, STOCK_DEPLETED -> findLowestScoreWinners(state);
+            case BANKRUPTCY           -> findActiveWinners(state);
+        };
+    }
+
+    /** GOING_OUT: 손패가 빈 ACTIVE 플레이어 */
+    private List<String> findGoingOutWinners(RoundState state) {
+        return state.getPlayerStates().entrySet().stream()
+                .filter(e -> e.getValue().getHand().isEmpty()
+                        && e.getValue().getStatus() == PlayerStatus.ACTIVE)
+                .map(Map.Entry::getKey)
+                .toList();
+    }
+
+    /** STOP / STOCK_DEPLETED: ACTIVE 플레이어 중 핸드 점수 최솟값 보유자 (공동 가능) */
+    private List<String> findLowestScoreWinners(RoundState state) {
+        Map<String, Integer> scores = new HashMap<>();
+        state.getPlayerStates().forEach((id, prs) -> {
+            if (prs.getStatus() == PlayerStatus.ACTIVE) {
+                scores.put(id, scoreService.calculateHandScore(prs.getHand()));
+            }
+        });
+        if (scores.isEmpty()) return List.of();
+        int minScore = Collections.min(scores.values());
+        return scores.entrySet().stream()
+                .filter(e -> e.getValue() == minScore)
+                .map(Map.Entry::getKey)
+                .toList();
+    }
+
+    /** BANKRUPTCY: 파산 후 남은 ACTIVE 플레이어 전원 승자 */
+    private List<String> findActiveWinners(RoundState state) {
+        return state.getPlayerStates().entrySet().stream()
+                .filter(e -> e.getValue().getStatus() == PlayerStatus.ACTIVE)
+                .map(Map.Entry::getKey)
+                .toList();
+    }
+
+    /**
+     * 파산 후 활성 플레이어 수를 확인해 1명 이하면 BANKRUPTCY 종료 조건을 설정한다.
+     * 이미 다른 endCondition 이 설정된 경우에는 덮어쓰지 않는다.
+     */
+    private void checkBankruptcyEndCondition(RoundState state) {
+        if (state.getEndCondition() != null) return;
+        long activeCount = state.getPlayerStates().values().stream()
+                .filter(p -> p.getStatus() == PlayerStatus.ACTIVE)
+                .count();
+        if (activeCount <= 1) {
+            state.setEndCondition(RoundEndCondition.BANKRUPTCY);
+            log.info("[Round] BANKRUPTCY end: {} active player(s) remain", activeCount);
+        }
     }
 
     /** 파산 여부 체크 (핸드 10장 이상이면 즉시 탈락) */
@@ -530,6 +667,7 @@ public class RoundService {
             playerState.setHasBankrupted(true);
             playerState.setStatus(PlayerStatus.ELIMINATED);
             log.info("[Round] BANKRUPTCY (penalty draw) playerId={}", playerId);
+            checkBankruptcyEndCondition(state);
         }
     }
 

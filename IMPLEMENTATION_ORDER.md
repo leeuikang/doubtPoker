@@ -13,11 +13,11 @@
 - [V] 6. `RoundService` - 멜드/확장 — `handleMeld`, `handleExtend`: `MeldValidationService` 연동
 - [V] 7. `RoundService` - 버리기 — `handleDiscard`: 버림더미 push, 땡큐 타이머 5초 트리거
 - [V] 8. `RoundService` - 특수 선언 — `handleThankYou`, `handleStop`, `handleDoubt`, `handleRevealBluff`
-- [ ] 9. `RoundService` - 종료 조건 — 고잉아웃·스탑·스톡소진·파산 감지 → `ScoreService` 연동
+- [V] 9. `RoundService` - 종료 조건 — 고잉아웃·스탑·스톡소진·파산 감지 → `ScoreService` 연동
 
 ## 3단계 — 부가 기능 (2단계 의존)
 
-- [ ] 10. `TimerService` — 턴 타이머(20초) → `handleTurnTimeout`, 땡큐 타이머
+- [V] 10. `TimerService` — 턴 타이머(20초) → `handleTurnTimeout`, 땡큐 타이머
 - [ ] 11. `AIService` — 연결 끊긴 플레이어 자동 턴 처리
 
 ## 4단계 — 컨트롤러/연결 (전체 의존)
