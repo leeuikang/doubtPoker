@@ -22,6 +22,7 @@ public class TournamentState {
     private Map<String, Integer> scores;       // playerId → 현재 점수
     private List<String> eliminatedPlayers;
     private List<Map<String, Integer>> roundHistory; // 라운드별 점수 델타
+    private String lastRoundWinnerId;               // 직전 라운드 승자 ID (다음 라운드 선 플레이어)
 
     public TournamentState(String roomId) {
         this.roomId = roomId;
