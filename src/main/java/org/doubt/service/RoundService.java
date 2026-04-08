@@ -388,7 +388,8 @@ public class RoundService {
      * 거짓말 자진 공개 처리
      *
      * <p>ruleBook §7: 본인 턴에 자신이 낸 거짓말 멜드를 공개 가능.
-     * 소유자가 카드를 회수하고, 확장자 각 1장 드로우 패널티.</p>
+     * 소유자는 카드를 회수하고, 확장자는 카드 회수 없이 1장 드로우 패널티만 받는다.
+     * (카드 회수는 지목 성공 시에만 해당)</p>
      */
     public RoundState handleRevealBluff(RoundState state, String playerId, RevealBluffRequest request) {
         validateCurrentPlayer(state, playerId);
@@ -406,11 +407,9 @@ public class RoundService {
         // 소유자 카드 회수
         state.getPlayerStates().get(playerId).getHand().addAll(meld.getActualCards());
 
-        // 확장자: 카드 회수 + 1장 드로우 패널티
-        meld.getExtensions().forEach((extenderId, cards) -> {
-            state.getPlayerStates().get(extenderId).getHand().addAll(cards);
-            drawOneFromStock(state, extenderId);
-        });
+        // 확장자: 1장 드로우 패널티만 (ruleBook §7 — 카드 회수는 지목 성공 시에만 해당)
+        meld.getExtensions().forEach((extenderId, cards) ->
+                drawOneFromStock(state, extenderId));
 
         state.getTableMelds().remove(meld);
         if (request.meldId().equals(state.getLastDoubtableMeldId())) {

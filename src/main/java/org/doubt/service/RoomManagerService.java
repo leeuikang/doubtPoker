@@ -15,7 +15,7 @@ public class RoomManagerService {
 
     private final PokerRoomRepository pokerRoomRepository;
 
-    @Scheduled(fixedDelay =  60 * 1000 * 1000)
+    @Scheduled(fixedDelay = 60_000L)
     public void cleanupInactiveRooms(){
 
         log.info("Cleaning up inactive rooms");

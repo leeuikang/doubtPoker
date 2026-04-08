@@ -2084,8 +2084,8 @@ class RoundServiceTest {
         }
 
         @Test
-        @DisplayName("정상: 확장자가 extension 카드를 돌려받고 스톡에서 1장 드로우한다")
-        void happy_path_extender_gets_cards_back_and_draws_penalty() {
+        @DisplayName("정상: 확장자는 extension 카드를 돌려받지 않고 스톡에서 1장 드로우만 한다 (ruleBook §7)")
+        void happy_path_extender_only_draws_penalty_no_card_return() {
             RoundState state = buildTwoPlayerActionStateForReveal(makeCards(3));
             List<Card> actualCards = new ArrayList<>(List.of(new Card(Suit.SPADE, Rank.TWO)));
             Meld meld = Meld.create("meld-1", P1, MeldType.SOLO_SEVEN,
@@ -2098,10 +2098,10 @@ class RoundServiceTest {
             int extenderHandBefore = state.getPlayerStates().get(P2).getHand().size();
             roundService.handleRevealBluff(state, P1, new RevealBluffRequest("meld-1"));
 
-            // 확장자: extension 카드 회수 + 패널티 드로우 1장
+            // 확장자: 카드 회수 없이 패널티 드로우 1장만 (ruleBook §7)
             assertThat(state.getPlayerStates().get(P2).getHand())
-                    .hasSize(extenderHandBefore + 1 + 1);
-            assertThat(state.getPlayerStates().get(P2).getHand()).contains(extCard);
+                    .hasSize(extenderHandBefore + 1);
+            assertThat(state.getPlayerStates().get(P2).getHand()).doesNotContain(extCard);
         }
 
         @Test
