@@ -20,4 +20,14 @@ public final class AppConstants {
      * 배포 도메인 변경 시 이 배열만 수정하면 전체 적용된다.
      */
     public static final String[] ALLOWED_ORIGINS = { PROD_ORIGIN, DEV_ORIGIN };
+
+    // ----------------------------------------------------------------
+    // CSRF
+    // ----------------------------------------------------------------
+
+    /**
+     * WebSocket 핸드셰이크 시 CSRF 토큰을 전달하는 쿼리 파라미터 이름.
+     * 클라이언트: new SockJS('/websocket?' + CSRF_PARAM + '=' + csrfToken)
+     */
+    public static final String CSRF_PARAM = "csrf";
 }

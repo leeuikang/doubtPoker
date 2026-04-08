@@ -26,6 +26,7 @@ public class GuestAuthController {
     public GuestTokenResponse issueGuestToken(@RequestBody @Valid GuestTokenRequest request) {
         String token = guestTokenService.issue(request.nickname());
         GuestClaims claims = guestTokenService.verify(token);
-        return new GuestTokenResponse(token, claims.guestId(), claims.nickname());
+        String csrfToken = guestTokenService.issueCsrfToken(claims.guestId());
+        return new GuestTokenResponse(token, claims.guestId(), claims.nickname(), csrfToken);
     }
 }

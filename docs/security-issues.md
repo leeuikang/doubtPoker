@@ -164,11 +164,19 @@
 
 ---
 
-### L-5 CSRF 토큰 없음 [ ]
+### L-5 CSRF 토큰 없음 [x]
 - **파일**: `src/main/java/org/doubt/config/WebSocketConfig.java`
 - **내용**: WebSocket 핸드셰이크 시 CSRF 토큰 검증 없음
 - **영향**: H-1(CORS 전체 허용)과 결합 시 CSRF 공격 가능
 - **수정 방향**: H-1, H-2 수정 후 함께 처리
+- **수정 내용**:
+  - `GuestTokenService`: `issueCsrfToken(guestId)` / `verifyCsrfToken(token)` 추가 — 포맷 `{guestId}.{HMAC(guestId+":csrf")}`, 무상태(저장소 불필요)
+  - `GuestTokenResponse`: `csrfToken` 필드 추가 — `POST /auth/guest` 응답에 CSRF 토큰 포함
+  - `GuestAuthController`: `issueCsrfToken()` 호출 후 응답에 포함
+  - `AppConstants`: `CSRF_PARAM = "csrf"` 상수 추가
+  - `CsrfHandshakeInterceptor` (신규): WebSocket 업그레이드 시 `?csrf=<token>` 쿼리 파라미터 검증, guestId를 세션 속성(`csrfGuestId`)에 저장
+  - `StompAuthInterceptor`: CONNECT 시 `csrfGuestId`와 auth 토큰 guestId 교차 검증 — CSRF 토큰과 auth 토큰이 같은 게스트 세션임을 보장
+  - `WebSocketConfig`: `.addInterceptors(csrfHandshakeInterceptor)` 등록
 
 ---
 
@@ -188,4 +196,4 @@
 | 10 | H-2 인증/인가 | [x] | 설계 논의 필요 |
 | 11 | L-3 레이트 리밋 | [x] | 운영 단계에서 |
 | 12 | L-4 턴 검증 | [x] | 게임 로직 구현 완료 후 |
-| 13 | L-5 CSRF | [ ] | H-1, H-2 해결 후 |
+| 13 | L-5 CSRF | [x] | H-1, H-2 해결 후 |

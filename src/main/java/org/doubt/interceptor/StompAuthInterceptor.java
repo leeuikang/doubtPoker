@@ -59,6 +59,14 @@ public class StompAuthInterceptor implements ChannelInterceptor {
         }
 
         Map<String, Object> attrs = Objects.requireNonNull(accessor.getSessionAttributes());
+
+        // CSRF 교차 검증: 핸드셰이크 시 저장된 guestId와 auth 토큰의 guestId가 일치해야 함
+        String csrfGuestId = (String) attrs.get("csrfGuestId");
+        if (csrfGuestId == null || !csrfGuestId.equals(claims.guestId())) {
+            log.warn("STOMP CONNECT rejected — CSRF/auth guestId mismatch: sessionId={}", accessor.getSessionId());
+            throw new GameException(ErrorCode.UNAUTHORIZED);
+        }
+
         attrs.put("guestId", claims.guestId());
         attrs.put("nickname", claims.nickname());
 

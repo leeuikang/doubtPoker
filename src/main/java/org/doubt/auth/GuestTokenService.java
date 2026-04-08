@@ -56,6 +56,29 @@ public class GuestTokenService {
         return payloadB64 + "." + signatureB64;
     }
 
+    /**
+     * CSRF 토큰 발급 (포맷: {guestId}.{HMAC(guestId + ":csrf")})
+     * 무상태(stateless) — 서버 재시작 전까지 유효하며 별도 저장소 불필요.
+     */
+    public String issueCsrfToken(String guestId) {
+        String sig = base64Encode(hmac(guestId + ":csrf"));
+        return guestId + "." + sig;
+    }
+
+    /**
+     * CSRF 토큰 검증 후 guestId 반환.
+     * 서명이 틀리면 TOKEN_INVALID 예외.
+     */
+    public String verifyCsrfToken(String csrfToken) {
+        if (csrfToken == null) throw new GameException(ErrorCode.TOKEN_INVALID);
+        String[] parts = csrfToken.split("\\.", 2);
+        if (parts.length != 2) throw new GameException(ErrorCode.TOKEN_INVALID);
+        String guestId = parts[0];
+        String expected = base64Encode(hmac(guestId + ":csrf"));
+        if (!constantTimeEquals(expected, parts[1])) throw new GameException(ErrorCode.TOKEN_INVALID);
+        return guestId;
+    }
+
     public GuestClaims verify(String token) {
         String[] parts = token.split("\\.", 2);
         if (parts.length != 2) throw new GameException(ErrorCode.TOKEN_INVALID);
