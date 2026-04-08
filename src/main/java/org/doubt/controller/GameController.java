@@ -5,10 +5,14 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.doubt.constant.ErrorCode;
 import org.doubt.constant.GameAction;
+import org.doubt.constant.GameConstants;
 import org.doubt.constant.GameStatus;
+import org.doubt.constant.PlayerStatus;
 import org.doubt.dto.GameMessage;
+import org.doubt.dto.PlayerRoundState;
 import org.doubt.dto.PokerRoom;
 import org.doubt.dto.RoundState;
+import org.doubt.dto.TournamentState;
 import org.doubt.dto.request.DiscardRequest;
 import org.doubt.dto.request.DoubtRequest;
 import org.doubt.dto.request.DrawRequest;
@@ -20,6 +24,7 @@ import org.doubt.exception.GameException;
 import org.doubt.handler.SessionManager;
 import org.doubt.repository.PokerRoomRepository;
 import org.doubt.service.RoundService;
+import org.doubt.service.TournamentService;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -47,6 +52,7 @@ public class GameController {
     private final SimpMessagingTemplate messagingTemplate;
     private final SessionManager sessionManager;
     private final RoundService roundService;
+    private final TournamentService tournamentService;
     private final PokerRoomRepository pokerRoomRepository;
     private final ObjectMapper objectMapper;
 
@@ -93,21 +99,51 @@ public class GameController {
 
         PokerRoom room = findRoom(message.roomId());
 
+        RoundState startedState;
+        int currentRound;
+
         synchronized (room) {
-            List<String> playerIds = room.getPlayerList().stream()
+            if (room.getStatus() == GameStatus.TOURNAMENT_END) {
+                throw new GameException(ErrorCode.INVALID_TURN_PHASE);
+            }
+
+            List<String> allPlayerIds = room.getPlayerList().stream()
                     .map(p -> p.getName())
                     .toList();
 
-            String firstPlayerId = extractFirstPlayerId(message.payload(), playerIds);
-            RoundState state = roundService.startRound(message.roomId(), playerIds, firstPlayerId);
+            TournamentState tournament = room.getTournamentState();
+            List<String> playerIds;
+            String firstPlayerId;
 
-            room.setRoundState(state);
+            if (tournament == null) {
+                // 첫 라운드: 토너먼트 초기화
+                tournament = tournamentService.initTournament(message.roomId(), allPlayerIds);
+                room.setTournamentState(tournament);
+                playerIds = allPlayerIds;
+                firstPlayerId = extractFirstPlayerId(message.payload(), playerIds);
+            } else {
+                // 이후 라운드: 탈락자 제외, 직전 승자가 선
+                playerIds = tournamentService.getActivePlayers(tournament).stream()
+                        .filter(allPlayerIds::contains)
+                        .toList();
+                if (playerIds.size() < GameConstants.MIN_PLAYERS) {
+                    throw new GameException(ErrorCode.NOT_ENOUGH_PLAYERS);
+                }
+                String lastWinner = tournament.getLastRoundWinnerId();
+                firstPlayerId = (lastWinner != null && playerIds.contains(lastWinner))
+                        ? lastWinner
+                        : playerIds.get(0);
+            }
+
+            startedState = roundService.startRound(message.roomId(), playerIds, firstPlayerId);
+            room.setRoundState(startedState);
             room.setStatus(GameStatus.IN_PROGRESS);
             room.updateActivityTime();
+            currentRound = room.getTournamentState().getCurrentRound();
         }
 
-        broadcast(message.roomId(), new GameMessage("ROUND_STARTED", message.roomId(), "SYSTEM", room.getRoundState()));
-        log.info("[GameController] round started roomId={}", message.roomId());
+        broadcast(message.roomId(), new GameMessage("ROUND_STARTED", message.roomId(), "SYSTEM", startedState));
+        log.info("[GameController] round started roomId={} round={}", message.roomId(), currentRound);
     }
 
     // ─────────────────────────────────────────────────────────
@@ -137,6 +173,9 @@ public class GameController {
 
         RoundState updated;
         synchronized (room) {
+            if (room.getStatus() != GameStatus.IN_PROGRESS) {
+                throw new GameException(ErrorCode.INVALID_TURN_PHASE);
+            }
             RoundState state = room.getRoundState();
             if (state == null || state.getEndCondition() != null) {
                 throw new GameException(ErrorCode.INVALID_TURN_PHASE);
@@ -150,10 +189,48 @@ public class GameController {
         log.info("[GameController] action={} playerId={} roomId={}", action, nickname, message.roomId());
 
         if (updated.getEndCondition() != null) {
+            List<String> roundWinnerIds = roundService.determineWinners(updated);
             Map<String, Integer> scoreDelta = roundService.resolveRound(updated);
-            room.setStatus(GameStatus.ROUND_END);
+
+            boolean tournamentFinished = false;
+            List<String> tournamentWinners = List.of();
+            Map<String, Integer> finalScores = Map.of();
+
+            synchronized (room) {
+                room.setStatus(GameStatus.ROUND_END);
+                TournamentState tournament = room.getTournamentState();
+                if (tournament != null) {
+                    tournament = tournamentService.applyRoundResult(tournament, scoreDelta, roundWinnerIds);
+                    room.setTournamentState(tournament);
+
+                    // 토너먼트 탈락자를 현재 RoundState에도 반영 (PlayerStatus 동기화)
+                    RoundState roundState = room.getRoundState();
+                    if (roundState != null) {
+                        tournament.getEliminatedPlayers().forEach(eliminatedId -> {
+                            PlayerRoundState prs = roundState.getPlayerStates().get(eliminatedId);
+                            if (prs != null && prs.getStatus() != PlayerStatus.ELIMINATED) {
+                                prs.setStatus(PlayerStatus.ELIMINATED);
+                            }
+                        });
+                    }
+
+                    if (tournamentService.isFinished(tournament)) {
+                        tournamentFinished = true;
+                        tournamentWinners = tournamentService.getWinners(tournament);
+                        finalScores = Map.copyOf(tournament.getScores());
+                        room.setStatus(GameStatus.TOURNAMENT_END);
+                    }
+                }
+            }
+
             broadcast(message.roomId(), new GameMessage("ROUND_END", message.roomId(), "SYSTEM", scoreDelta));
             log.info("[GameController] ROUND_END roomId={} endCondition={}", message.roomId(), updated.getEndCondition());
+
+            if (tournamentFinished) {
+                broadcast(message.roomId(), new GameMessage("TOURNAMENT_END", message.roomId(), "SYSTEM",
+                        Map.of("winners", tournamentWinners, "scores", finalScores)));
+                log.info("[GameController] TOURNAMENT_END roomId={} winners={}", message.roomId(), tournamentWinners);
+            }
         }
     }
 

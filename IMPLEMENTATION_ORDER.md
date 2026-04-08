@@ -24,4 +24,4 @@
 
 - [V] 12. `GameController` 업데이트 — 새 `GameAction` 라우팅, `RoundService` 위임
 - [V] 13. `WebSocketEventListener` 업데이트 — 재접속 복원, 반복 끊김 패널티 처리
-- [ ] 14. `TournamentState` 연동 — 10라운드 관리, 탈락 처리, 토너먼트 종료
+- [V] 14. `TournamentState` 연동 — 10라운드 관리, 탈락 처리, 토너먼트 종료

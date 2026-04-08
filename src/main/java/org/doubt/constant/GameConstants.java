@@ -81,4 +81,11 @@ public final class GameConstants {
 
     /** 이 횟수 이상 연결이 끊기면 자동 패배 처리 */
     public static final int MAX_DISCONNECT_COUNT = 3;
+
+    // ----------------------------------------------------------------
+    // 토너먼트
+    // ----------------------------------------------------------------
+
+    /** 토너먼트 시작 시 플레이어별 초기 점수 */
+    public static final int TOURNAMENT_START_SCORE = 100;
 }

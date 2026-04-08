@@ -7,11 +7,14 @@
 
 ## HIGH
 
-### H-1 CORS 전체 허용 [ ]
+### H-1 CORS 전체 허용 [x]
 - **파일**: `src/main/java/org/doubt/config/WebSocketConfig.java:20`
 - **내용**: `setAllowedOrigins("*")` — 모든 출처에서 WebSocket 연결 허용
 - **영향**: 악성 사이트에서 WebSocket 연결 후 게임 조작 가능 (CSRF)
 - **수정 방향**: 허용할 프론트엔드 도메인만 명시
+- **수정 내용**:
+  - `AppConstants` (신규): `PROD_ORIGIN = "https://doubtpoker.io"`, `DEV_ORIGIN = "http://localhost:5173"`, `ALLOWED_ORIGINS[]` 상수 정의 — 도메인 변경 시 이 파일 한 곳만 수정하면 전체 적용
+  - `WebSocketConfig`: `setAllowedOrigins("*")` → `setAllowedOrigins(AppConstants.ALLOWED_ORIGINS)` 교체
 
 ---
 
@@ -150,11 +153,14 @@
 
 ---
 
-### L-4 턴 순서·페이즈 검증 없음 [ ]
+### L-4 턴 순서·페이즈 검증 없음 [x]
 - **파일**: `src/main/java/org/doubt/controller/GameController.java`, `src/main/java/org/doubt/service/RoundService.java`
 - **내용**: 액션 처리 시 현재 플레이어 및 턴 페이즈 검증 없음
 - **영향**: 순서 외 액션 수행, 게임 흐름 강제 조작
 - **수정 방향**: RoundService 각 핸들러에 페이즈/턴 검증 추가
+- **수정 내용**:
+  - `GameController.processAction()`: `room.getStatus() == TOURNAMENT_END` 단순 체크 → `room.getStatus() != IN_PROGRESS` 로 강화 — WAITING·ROUND_END 등 모든 비진행 상태 차단
+  - `RoundService.validateCurrentPlayer()`: 현재 플레이어 ID 일치 검증에 더해 `PlayerStatus.ACTIVE` 검증 추가 — 탈락(ELIMINATED) 플레이어가 현재 턴인 엣지 케이스 방어
 
 ---
 
@@ -178,8 +184,8 @@
 | 6 | M-3 예외 정보 노출 | [x] | 로그·응답 구조 정비 |
 | 7 | L-1 로그 인젝션 | [x] | H-4 수정 시 동시 처리 |
 | 8 | L-2 null 안전성 | [x] | 크래시 방지 |
-| 9 | H-1 CORS | [ ] | 배포 도메인 확정 후 |
+| 9 | H-1 CORS | [x] | 배포 도메인 확정 후 |
 | 10 | H-2 인증/인가 | [x] | 설계 논의 필요 |
 | 11 | L-3 레이트 리밋 | [x] | 운영 단계에서 |
-| 12 | L-4 턴 검증 | [ ] | 게임 로직 구현 완료 후 |
+| 12 | L-4 턴 검증 | [x] | 게임 로직 구현 완료 후 |
 | 13 | L-5 CSRF | [ ] | H-1, H-2 해결 후 |

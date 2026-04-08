@@ -67,6 +67,9 @@ class GameControllerTest {
     private RoundService roundService;
 
     @Mock
+    private org.doubt.service.TournamentService tournamentService;
+
+    @Mock
     private PokerRoomRepository pokerRoomRepository;
 
     @Mock
@@ -122,6 +125,7 @@ class GameControllerTest {
     private PokerRoom buildRoom(String roomId, RoundState roundState) {
         PokerRoom room = new PokerRoom(roomId, "Test Room");
         room.setRoundState(roundState);
+        room.setStatus(GameStatus.IN_PROGRESS);
         return room;
     }
 
@@ -383,6 +387,7 @@ class GameControllerTest {
                     .thenReturn(endedState);
 
             Map<String, Integer> scoreDelta = Map.of(NICKNAME, 5);
+            when(roundService.determineWinners(endedState)).thenReturn(List.of(NICKNAME));
             when(roundService.resolveRound(endedState)).thenReturn(scoreDelta);
 
             GameMessage message = new GameMessage(GameAction.DRAW.name(), ROOM_ID, NICKNAME, null);
