@@ -115,6 +115,8 @@ PR 내용: !`gh pr view`
 | `game-logic-reviewer` | `.claude/agents/game-logic-reviewer/SKILL.md` | 코드 컨벤션·게임 로직 리뷰 |
 | `rule-checker` | `.claude/agents/rule-checker/SKILL.md` | ruleBook 기준 구현 검증 |
 | `test-writer` | `.claude/agents/test-writer/SKILL.md` | JUnit5 단위 테스트 작성 |
+| `security-reviewer` | `.claude/agents/security-reviewer/SKILL.md` | security-issues.md 기준 보안 취약점 리뷰 |
+| `code-quality-reviewer` | `.claude/agents/code-quality-reviewer/SKILL.md` | 네이밍·설계·중복·성능 등 코드 품질 리뷰 |
 
 ### Skills
 

@@ -46,6 +46,8 @@
 | `game-logic-reviewer` | `@"game-logic-reviewer (agent)"` | 코드 컨벤션·게임 로직 리뷰 |
 | `rule-checker` | `@"rule-checker (agent)"` | ruleBook 기준 구현 검증 |
 | `test-writer` | `@"test-writer (agent)"` | 구현 완료 서비스의 JUnit5 단위 테스트 작성 |
+| `security-reviewer` | `@"security-reviewer (agent)"` | security-issues.md 기준 보안 취약점 리뷰 |
+| `code-quality-reviewer` | `@"code-quality-reviewer (agent)"` | 네이밍·설계·중복·성능 등 코드 품질 리뷰 |
 
 ### Skills
 
