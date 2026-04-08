@@ -23,5 +23,5 @@
 ## 4단계 — 컨트롤러/연결 (전체 의존)
 
 - [V] 12. `GameController` 업데이트 — 새 `GameAction` 라우팅, `RoundService` 위임
-- [ ] 13. `WebSocketEventListener` 업데이트 — 재접속 복원, 반복 끊김 패널티 처리
+- [V] 13. `WebSocketEventListener` 업데이트 — 재접속 복원, 반복 끊김 패널티 처리
 - [ ] 14. `TournamentState` 연동 — 10라운드 관리, 탈락 처리, 토너먼트 종료

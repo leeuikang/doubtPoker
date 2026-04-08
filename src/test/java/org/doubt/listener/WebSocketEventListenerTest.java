@@ -1,9 +1,15 @@
 package org.doubt.listener;
 
 import org.doubt.auth.NicknameRegistry;
+import org.doubt.constant.GameConstants;
+import org.doubt.constant.GameStatus;
+import org.doubt.constant.PlayerStatus;
 import org.doubt.dto.GameMessage;
+import org.doubt.dto.PlayerRoundState;
+import org.doubt.dto.PokerRoom;
+import org.doubt.dto.RoundState;
 import org.doubt.handler.SessionManager;
-import org.junit.jupiter.api.BeforeEach;
+import org.doubt.repository.PokerRoomRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -18,17 +24,18 @@ import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.web.socket.CloseStatus;
+import org.springframework.web.socket.messaging.SessionConnectedEvent;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class WebSocketEventListenerTest {
@@ -42,19 +49,20 @@ class WebSocketEventListenerTest {
     @Mock
     private SimpMessageSendingOperations messagingTemplate;
 
+    @Mock
+    private PokerRoomRepository pokerRoomRepository;
+
+    @Mock
+    private ReconnectRegistry reconnectRegistry;
+
     @InjectMocks
     private WebSocketEventListener webSocketEventListener;
 
     // -----------------------------------------------------------------------
-    // 헬퍼: DISCONNECT STOMP 메시지 빌드
+    // 헬퍼
     // -----------------------------------------------------------------------
 
-    /**
-     * StompHeaderAccessor.wrap() 이 읽어들이는 MESSAGE 헤더에
-     * SESSION_ATTRIBUTES 를 심어 실제 getSessionAttributes() 가
-     * 원하는 Map 을 반환하도록 메시지를 조립한다.
-     */
-    private SessionDisconnectEvent buildEvent(Map<String, Object> sessionAttributes) {
+    private SessionDisconnectEvent buildDisconnectEvent(Map<String, Object> sessionAttributes) {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.DISCONNECT);
         accessor.setSessionId("test-session-id");
         if (sessionAttributes != null) {
@@ -65,8 +73,19 @@ class WebSocketEventListenerTest {
         return new SessionDisconnectEvent(this, message, "test-session-id", CloseStatus.NORMAL);
     }
 
+    private SessionConnectedEvent buildConnectEvent(Map<String, Object> sessionAttributes) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECTED);
+        accessor.setSessionId("test-session-id");
+        if (sessionAttributes != null) {
+            accessor.setSessionAttributes(sessionAttributes);
+        }
+        accessor.setLeaveMutable(true);
+        Message<byte[]> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+        return new SessionConnectedEvent(this, message);
+    }
+
     // -----------------------------------------------------------------------
-    // 테스트
+    // handleWebSocketDisconnectListener
     // -----------------------------------------------------------------------
 
     @Nested
@@ -74,10 +93,9 @@ class WebSocketEventListenerTest {
     class HandleWebSocketDisconnectListener {
 
         @Test
-        @DisplayName("getSessionAttributes() 가 null 을 반환하면 조기 반환하고 sessionManager 를 호출하지 않는다")
-        void nullSessionAttributes_returnsEarly_noSessionManagerCall() {
-            // sessionAttributes 를 설정하지 않으면 getSessionAttributes() 는 null 반환
-            SessionDisconnectEvent event = buildEvent(null);
+        @DisplayName("getSessionAttributes() 가 null 이면 조기 반환하고 sessionManager 를 호출하지 않는다")
+        void nullSessionAttributes_returnsEarly() {
+            SessionDisconnectEvent event = buildDisconnectEvent(null);
 
             assertThatNoException()
                     .isThrownBy(() -> webSocketEventListener.handleWebSocketDisconnectListener(event));
@@ -87,29 +105,12 @@ class WebSocketEventListenerTest {
         }
 
         @Test
-        @DisplayName("sessionAttributes 는 존재하지만 roomId 가 null 이면 조기 반환하고 sessionManager 를 호출하지 않는다")
-        void nullRoomId_returnsEarly_noSessionManagerCall() {
-            Map<String, Object> attributes = new HashMap<>();
-            // roomId 는 없고 userName 만 있는 상황
-            attributes.put("userName", "alice");
+        @DisplayName("roomId 가 null 이면 조기 반환하고 sessionManager 를 호출하지 않는다")
+        void nullRoomId_returnsEarly() {
+            Map<String, Object> attrs = new HashMap<>();
+            attrs.put("userName", "alice");
 
-            SessionDisconnectEvent event = buildEvent(attributes);
-
-            assertThatNoException()
-                    .isThrownBy(() -> webSocketEventListener.handleWebSocketDisconnectListener(event));
-
-            verify(sessionManager, never()).removeUserFromRoom(any(), any());
-            verify(messagingTemplate, never()).convertAndSend(any(String.class), any(Object.class));
-        }
-
-        @Test
-        @DisplayName("sessionAttributes 는 존재하지만 userName 이 null 이면 조기 반환하고 sessionManager 를 호출하지 않는다")
-        void nullUserName_returnsEarly_noSessionManagerCall() {
-            Map<String, Object> attributes = new HashMap<>();
-            // userName 은 없고 roomId 만 있는 상황
-            attributes.put("roomId", "room-1");
-
-            SessionDisconnectEvent event = buildEvent(attributes);
+            SessionDisconnectEvent event = buildDisconnectEvent(attrs);
 
             assertThatNoException()
                     .isThrownBy(() -> webSocketEventListener.handleWebSocketDisconnectListener(event));
@@ -119,50 +120,232 @@ class WebSocketEventListenerTest {
         }
 
         @Test
-        @DisplayName("roomId 와 userName 이 모두 존재하면 sessionManager.removeUserFromRoom() 을 호출하고 /topic/room/{roomId} 로 메시지를 전송한다")
-        void validAttributes_callsRemoveAndSendsMessage() {
+        @DisplayName("userName 이 null 이면 조기 반환하고 sessionManager 를 호출하지 않는다")
+        void nullUserName_returnsEarly() {
+            Map<String, Object> attrs = new HashMap<>();
+            attrs.put("roomId", "room-1");
+
+            SessionDisconnectEvent event = buildDisconnectEvent(attrs);
+
+            assertThatNoException()
+                    .isThrownBy(() -> webSocketEventListener.handleWebSocketDisconnectListener(event));
+
+            verify(sessionManager, never()).removeUserFromRoom(any(), any());
+            verify(messagingTemplate, never()).convertAndSend(any(String.class), any(Object.class));
+        }
+
+        @Test
+        @DisplayName("게임 미진행 중 끊김 — 방에서 제거하고 USER_DISCONNECTED 브로드캐스트")
+        void gameNotInProgress_removesUserAndBroadcasts() {
             String roomId = "room-42";
             String userName = "bob";
 
-            Map<String, Object> attributes = new HashMap<>();
-            attributes.put("roomId", roomId);
-            attributes.put("userName", userName);
+            Map<String, Object> attrs = new HashMap<>();
+            attrs.put("roomId", roomId);
+            attrs.put("userName", userName);
 
-            SessionDisconnectEvent event = buildEvent(attributes);
+            // 방이 WAITING 상태 (게임 미진행)
+            PokerRoom room = new PokerRoom(roomId, "Test Room");
+            room.setStatus(GameStatus.WAITING);
+            when(pokerRoomRepository.findById(roomId)).thenReturn(Optional.of(room));
 
+            SessionDisconnectEvent event = buildDisconnectEvent(attrs);
             webSocketEventListener.handleWebSocketDisconnectListener(event);
 
-            // sessionManager 호출 검증
             verify(sessionManager).removeUserFromRoom(eq(roomId), eq(userName));
-            // 닉네임 해제 검증
             verify(nicknameRegistry).release(eq(userName));
 
-            // 메시지 전송 검증 — 목적지와 GameMessage 내용 확인
-            ArgumentCaptor<GameMessage> messageCaptor = ArgumentCaptor.forClass(GameMessage.class);
-            verify(messagingTemplate).convertAndSend(
-                    eq("/topic/room/" + roomId),
-                    messageCaptor.capture()
-            );
+            ArgumentCaptor<GameMessage> captor = ArgumentCaptor.forClass(GameMessage.class);
+            verify(messagingTemplate).convertAndSend(eq("/topic/room/" + roomId), captor.capture());
 
-            GameMessage sent = messageCaptor.getValue();
-            assertThat(sent.type()).isEqualTo(userName + " user-disconnected");
+            GameMessage sent = captor.getValue();
+            assertThat(sent.type()).isEqualTo("USER_DISCONNECTED");
             assertThat(sent.roomId()).isEqualTo(roomId);
             assertThat(sent.sender()).isEqualTo(userName);
-            assertThat(sent.payload()).isNull();
+        }
+
+        @Test
+        @DisplayName("게임 진행 중 첫 끊김 — DISCONNECTED 마킹 후 ReconnectRegistry 에 등록")
+        void inGame_firstDisconnect_marksDisconnectedAndTracks() {
+            String roomId = "room-1";
+            String userName = "charlie";
+
+            Map<String, Object> attrs = new HashMap<>();
+            attrs.put("roomId", roomId);
+            attrs.put("userName", userName);
+
+            PokerRoom room = new PokerRoom(roomId, "Test Room");
+            room.setStatus(GameStatus.IN_PROGRESS);
+
+            PlayerRoundState prs = new PlayerRoundState();
+            prs.setPlayerId(userName);
+            prs.setStatus(PlayerStatus.ACTIVE);
+            prs.setDisconnectCount(0);
+
+            RoundState state = new RoundState();
+            state.setPlayerStates(Map.of(userName, prs));
+            room.setRoundState(state);
+
+            when(pokerRoomRepository.findById(roomId)).thenReturn(Optional.of(room));
+
+            SessionDisconnectEvent event = buildDisconnectEvent(attrs);
+            webSocketEventListener.handleWebSocketDisconnectListener(event);
+
+            assertThat(prs.getStatus()).isEqualTo(PlayerStatus.DISCONNECTED);
+            assertThat(prs.getDisconnectCount()).isEqualTo(1);
+
+            verify(reconnectRegistry).track(eq(userName), eq(roomId));
+            verify(sessionManager).removeUserFromRoom(eq(roomId), eq(userName));
+            verify(nicknameRegistry).release(eq(userName));
+
+            ArgumentCaptor<GameMessage> captor = ArgumentCaptor.forClass(GameMessage.class);
+            verify(messagingTemplate).convertAndSend(eq("/topic/room/" + roomId), captor.capture());
+            assertThat(captor.getValue().type()).isEqualTo("USER_DISCONNECTED");
+        }
+
+        @Test
+        @DisplayName("반복 끊김이 MAX_DISCONNECT_COUNT 이상이면 ELIMINATED 자동 패배 처리")
+        void inGame_repeatedDisconnect_autoEliminated() {
+            String roomId = "room-1";
+            String userName = "dave";
+
+            Map<String, Object> attrs = new HashMap<>();
+            attrs.put("roomId", roomId);
+            attrs.put("userName", userName);
+
+            PokerRoom room = new PokerRoom(roomId, "Test Room");
+            room.setStatus(GameStatus.IN_PROGRESS);
+
+            PlayerRoundState prs = new PlayerRoundState();
+            prs.setPlayerId(userName);
+            prs.setStatus(PlayerStatus.DISCONNECTED);
+            prs.setDisconnectCount(GameConstants.MAX_DISCONNECT_COUNT - 1); // 한 번 더 끊기면 임계치 도달
+
+            RoundState state = new RoundState();
+            state.setPlayerStates(Map.of(userName, prs));
+            room.setRoundState(state);
+
+            when(pokerRoomRepository.findById(roomId)).thenReturn(Optional.of(room));
+
+            SessionDisconnectEvent event = buildDisconnectEvent(attrs);
+            webSocketEventListener.handleWebSocketDisconnectListener(event);
+
+            assertThat(prs.getStatus()).isEqualTo(PlayerStatus.ELIMINATED);
+            assertThat(prs.getDisconnectCount()).isEqualTo(GameConstants.MAX_DISCONNECT_COUNT);
+
+            verify(reconnectRegistry, never()).track(any(), any());
+            verify(sessionManager).removeUserFromRoom(eq(roomId), eq(userName));
+
+            ArgumentCaptor<GameMessage> captor = ArgumentCaptor.forClass(GameMessage.class);
+            verify(messagingTemplate).convertAndSend(eq("/topic/room/" + roomId), captor.capture());
+            assertThat(captor.getValue().type()).isEqualTo("AUTO_ELIMINATED");
         }
 
         @Test
         @DisplayName("roomId 와 userName 이 모두 null 이면 조기 반환하고 sessionManager 를 호출하지 않는다")
-        void bothRoomIdAndUserNameNull_returnsEarly_noSessionManagerCall() {
-            Map<String, Object> attributes = new HashMap<>();
-            // 빈 맵 — roomId, userName 모두 없음
+        void bothNull_returnsEarly() {
+            Map<String, Object> attrs = new HashMap<>();
 
-            SessionDisconnectEvent event = buildEvent(attributes);
+            SessionDisconnectEvent event = buildDisconnectEvent(attrs);
 
             assertThatNoException()
                     .isThrownBy(() -> webSocketEventListener.handleWebSocketDisconnectListener(event));
 
             verify(sessionManager, never()).removeUserFromRoom(any(), any());
+            verify(messagingTemplate, never()).convertAndSend(any(String.class), any(Object.class));
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // handleWebSocketConnectListener
+    // -----------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("handleWebSocketConnectListener")
+    class HandleWebSocketConnectListener {
+
+        @Test
+        @DisplayName("ReconnectRegistry 에 없으면 신규 연결로 처리하고 상태를 복원하지 않는다")
+        void newConnection_noRestore() {
+            Map<String, Object> attrs = new HashMap<>();
+            attrs.put("nickname", "alice");
+
+            when(reconnectRegistry.findRoom("alice")).thenReturn(Optional.empty());
+
+            SessionConnectedEvent event = buildConnectEvent(attrs);
+            webSocketEventListener.handleWebSocketConnectListener(event);
+
+            verify(pokerRoomRepository, never()).findById(any());
+            verify(messagingTemplate, never()).convertAndSend(any(String.class), any(Object.class));
+        }
+
+        @Test
+        @DisplayName("세션 속성에 nickname 이 없으면 조기 반환한다")
+        void noNickname_returnsEarly() {
+            Map<String, Object> attrs = new HashMap<>();
+
+            SessionConnectedEvent event = buildConnectEvent(attrs);
+            webSocketEventListener.handleWebSocketConnectListener(event);
+
+            verify(reconnectRegistry, never()).findRoom(any());
+        }
+
+        @Test
+        @DisplayName("재접속 — DISCONNECTED 플레이어를 ACTIVE 로 복원하고 USER_RECONNECTED 브로드캐스트")
+        void reconnect_restoresActiveAndBroadcasts() {
+            String roomId = "room-99";
+            String nickname = "bob";
+
+            Map<String, Object> attrs = new HashMap<>();
+            attrs.put("nickname", nickname);
+
+            when(reconnectRegistry.findRoom(nickname)).thenReturn(Optional.of(roomId));
+
+            PokerRoom room = new PokerRoom(roomId, "Test Room");
+            room.setStatus(GameStatus.IN_PROGRESS);
+
+            PlayerRoundState prs = new PlayerRoundState();
+            prs.setPlayerId(nickname);
+            prs.setStatus(PlayerStatus.DISCONNECTED);
+
+            RoundState state = new RoundState();
+            state.setPlayerStates(new HashMap<>(Map.of(nickname, prs)));
+            room.setRoundState(state);
+
+            when(pokerRoomRepository.findById(roomId)).thenReturn(Optional.of(room));
+
+            SessionConnectedEvent event = buildConnectEvent(attrs);
+            webSocketEventListener.handleWebSocketConnectListener(event);
+
+            assertThat(prs.getStatus()).isEqualTo(PlayerStatus.ACTIVE);
+            assertThat(attrs.get("roomId")).isEqualTo(roomId);
+            assertThat(attrs.get("userName")).isEqualTo(nickname);
+
+            verify(reconnectRegistry).clear(nickname);
+            verify(sessionManager).addUserToRoom(eq(roomId), eq(nickname));
+
+            ArgumentCaptor<GameMessage> captor = ArgumentCaptor.forClass(GameMessage.class);
+            verify(messagingTemplate).convertAndSend(eq("/topic/room/" + roomId), captor.capture());
+            assertThat(captor.getValue().type()).isEqualTo("USER_RECONNECTED");
+        }
+
+        @Test
+        @DisplayName("재접속 — 방이 존재하지 않으면 상태를 복원하지 않는다")
+        void reconnect_roomNotFound_noRestore() {
+            String roomId = "ghost-room";
+            String nickname = "eve";
+
+            Map<String, Object> attrs = new HashMap<>();
+            attrs.put("nickname", nickname);
+
+            when(reconnectRegistry.findRoom(nickname)).thenReturn(Optional.of(roomId));
+            when(pokerRoomRepository.findById(roomId)).thenReturn(Optional.empty());
+
+            SessionConnectedEvent event = buildConnectEvent(attrs);
+            webSocketEventListener.handleWebSocketConnectListener(event);
+
+            verify(reconnectRegistry).clear(nickname);
+            verify(sessionManager, never()).addUserToRoom(any(), any());
             verify(messagingTemplate, never()).convertAndSend(any(String.class), any(Object.class));
         }
     }

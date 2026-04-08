@@ -74,4 +74,11 @@ public final class GameConstants {
 
     /** STRAIGHT에서 A를 K 다음으로 취급할 때의 값 (Q-K-A 조합) */
     public static final int ACE_HIGH_VALUE = 14;
+
+    // ----------------------------------------------------------------
+    // 연결
+    // ----------------------------------------------------------------
+
+    /** 이 횟수 이상 연결이 끊기면 자동 패배 처리 */
+    public static final int MAX_DISCONNECT_COUNT = 3;
 }
