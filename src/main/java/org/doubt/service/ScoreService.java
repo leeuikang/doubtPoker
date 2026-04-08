@@ -8,6 +8,7 @@ import org.doubt.dto.PlayerRoundState;
 import org.doubt.dto.TournamentState;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -57,12 +58,12 @@ public class ScoreService {
 
         // 1단계: 파산자 외 패배자 조정 점수 계산
         Map<String, Integer> loserAdjustedScores = new HashMap<>();
-        PlayerRoundState bankruptState = null;
+        List<PlayerRoundState> bankruptStates = new ArrayList<>();
 
         for (String loserId : loserIds) {
             PlayerRoundState state = playerStates.get(loserId);
             if (state.isHasBankrupted()) {
-                bankruptState = state;
+                bankruptStates.add(state);
                 continue;
             }
             int baseScore = calculateHandScore(state.getHand());
@@ -76,14 +77,14 @@ public class ScoreService {
             loserAdjustedScores.put(loserId, baseScore * multiplier);
         }
 
-        // 2단계: 파산자 조정 점수 계산
-        // max(본인 핸드점수 * 2, 다른 패배자 중 최고 조정점수)
-        if (bankruptState != null) {
+        // 2단계: 파산자 조정 점수 계산 (복수 파산자 각각 독립 처리)
+        // 각 파산자: max(본인 핸드점수 * 2, 다른 패배자 중 최고 조정점수)
+        int maxNonBankruptScore = loserAdjustedScores.values().stream()
+                .mapToInt(Integer::intValue).max().orElse(0);
+        for (PlayerRoundState bankruptState : bankruptStates) {
             int bankruptBase = calculateHandScore(bankruptState.getHand());
             int ownDoubled = bankruptBase * GameConstants.BANKRUPTCY_SCORE_MULTIPLIER;
-            int maxOtherLoser = loserAdjustedScores.values().stream()
-                    .mapToInt(Integer::intValue).max().orElse(0);
-            loserAdjustedScores.put(bankruptState.getPlayerId(), Math.max(ownDoubled, maxOtherLoser));
+            loserAdjustedScores.put(bankruptState.getPlayerId(), Math.max(ownDoubled, maxNonBankruptScore));
         }
 
         // 패배자 델타 적용 (음수)

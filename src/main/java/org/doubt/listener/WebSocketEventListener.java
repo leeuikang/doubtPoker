@@ -10,6 +10,7 @@ import org.doubt.dto.GameMessage;
 import org.doubt.dto.PlayerRoundState;
 import org.doubt.dto.PokerRoom;
 import org.doubt.dto.RoundState;
+import org.doubt.dto.TournamentState;
 import org.doubt.handler.SessionManager;
 import org.doubt.repository.PokerRoomRepository;
 import org.springframework.context.event.EventListener;
@@ -161,8 +162,16 @@ public class WebSocketEventListener {
             prs.setDisconnectCount(prs.getDisconnectCount() + 1);
 
             if (prs.getDisconnectCount() >= GameConstants.MAX_DISCONNECT_COUNT) {
-                // 자동 패배 처리
+                // 자동 패배 처리 (ruleBook §10)
                 prs.setStatus(PlayerStatus.ELIMINATED);
+                prs.setHasBankrupted(true); // 2배 패널티 적용 (ScoreService 배율 적용)
+
+                // 토너먼트 탈락 목록에도 즉시 반영
+                TournamentState tournament = room.getTournamentState();
+                if (tournament != null && !tournament.getEliminatedPlayers().contains(userName)) {
+                    tournament.getEliminatedPlayers().add(userName);
+                }
+
                 sessionManager.removeUserFromRoom(roomId, userName);
                 nicknameRegistry.release(userName);
                 log.warn("[WS] Auto-eliminated due to repeated disconnects: nickname={}, count={}", userName, prs.getDisconnectCount());

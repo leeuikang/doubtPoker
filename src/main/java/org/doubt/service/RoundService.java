@@ -528,7 +528,7 @@ public class RoundService {
     }
 
     /** endCondition 별 승자 ID 목록 결정 */
-    private List<String> determineWinners(RoundState state) {
+    public List<String> determineWinners(RoundState state) {
         return switch (state.getEndCondition()) {
             case GOING_OUT            -> findGoingOutWinners(state);
             case STOP, STOCK_DEPLETED -> findLowestScoreWinners(state);
@@ -637,6 +637,10 @@ public class RoundService {
     private void validateCurrentPlayer(RoundState state, String playerId) {
         String currentPlayerId = state.getTurnOrder().get(state.getCurrentPlayerIndex());
         if (!currentPlayerId.equals(playerId)) {
+            throw new GameException(ErrorCode.INVALID_TURN);
+        }
+        PlayerRoundState playerState = state.getPlayerStates().get(playerId);
+        if (playerState == null || playerState.getStatus() != PlayerStatus.ACTIVE) {
             throw new GameException(ErrorCode.INVALID_TURN);
         }
     }

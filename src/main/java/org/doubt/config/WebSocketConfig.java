@@ -1,6 +1,7 @@
 package org.doubt.config;
 
 import lombok.RequiredArgsConstructor;
+import org.doubt.constant.AppConstants;
 import org.doubt.interceptor.ChatRateLimitInterceptor;
 import org.doubt.interceptor.StompAuthInterceptor;
 import org.doubt.interceptor.StompLogInterceptor;
@@ -31,7 +32,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry){
-        registry.addEndpoint("/websocket").setAllowedOrigins("*").withSockJS();
+        registry.addEndpoint("/websocket").setAllowedOrigins(AppConstants.ALLOWED_ORIGINS).withSockJS();
     }
 
     @Override

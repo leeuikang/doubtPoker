@@ -20,6 +20,7 @@ public class PokerRoom {
     private int totalPot;
     private LocalDateTime lastActivityTime;
     private RoundState roundState;
+    private TournamentState tournamentState;
 
     public PokerRoom(String roomId, String roomName) {
         this.roomId = roomId;
