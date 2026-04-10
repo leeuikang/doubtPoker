@@ -19,6 +19,7 @@ import org.doubt.dto.request.DrawRequest;
 import org.doubt.exception.GameException;
 import org.doubt.handler.SessionManager;
 import org.doubt.repository.PokerRoomRepository;
+import org.doubt.service.GameBroadcastService;
 import org.doubt.service.RoundService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -29,7 +30,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -40,12 +40,14 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.same;
+
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -58,7 +60,7 @@ import static org.mockito.Mockito.when;
 class GameControllerTest {
 
     @Mock
-    private SimpMessagingTemplate messagingTemplate;
+    private GameBroadcastService gameBroadcastService;
 
     @Mock
     private SessionManager sessionManager;
@@ -175,7 +177,7 @@ class GameControllerTest {
 
             gameController.processJoinRoom(message, accessor);
 
-            verify(messagingTemplate).convertAndSend(eq("/topic/room/" + roomId), captor.capture());
+            verify(gameBroadcastService).broadcast(eq(roomId), captor.capture());
             GameMessage broadcast = captor.getValue();
             assertThat(broadcast.sender()).isEqualTo(sessionNickname);
             assertThat(broadcast.sender()).isNotEqualTo(messageSender);
@@ -193,7 +195,7 @@ class GameControllerTest {
                             .isEqualTo(ErrorCode.UNAUTHORIZED));
 
             verify(sessionManager, never()).addUserToRoom(any(), any());
-            verify(messagingTemplate, never()).convertAndSend(anyString(), (Object) any());
+            verifyNoInteractions(gameBroadcastService);
         }
 
         @Test
@@ -359,15 +361,8 @@ class GameControllerTest {
             gameController.processAction(message, validAccessor());
 
             verify(roundService, times(1)).handleDraw(eq(activeState), eq(NICKNAME), any(DrawRequest.class));
-
-            ArgumentCaptor<GameMessage> broadcastCaptor = ArgumentCaptor.forClass(GameMessage.class);
-            verify(messagingTemplate, times(1))
-                    .convertAndSend(eq("/topic/room/" + ROOM_ID), broadcastCaptor.capture());
-
-            GameMessage broadcast = broadcastCaptor.getValue();
-            assertThat(broadcast.roomId()).isEqualTo(ROOM_ID);
-            assertThat(broadcast.sender()).isEqualTo(NICKNAME);
-            assertThat(broadcast.payload()).isSameAs(updatedState);
+            verify(gameBroadcastService, times(1))
+                    .broadcastRoundState(eq(ROOM_ID), eq("DRAW"), eq(NICKNAME), same(updatedState));
         }
 
         @Test
@@ -400,13 +395,14 @@ class GameControllerTest {
             // Room status updated to ROUND_END
             assertThat(room.getStatus()).isEqualTo(GameStatus.ROUND_END);
 
-            // Two broadcasts: one for the action result, one for ROUND_END
-            ArgumentCaptor<GameMessage> broadcastCaptor = ArgumentCaptor.forClass(GameMessage.class);
-            verify(messagingTemplate, times(2))
-                    .convertAndSend(eq("/topic/room/" + ROOM_ID), broadcastCaptor.capture());
+            // 액션 결과: broadcastRoundState (RoundState 포함)
+            verify(gameBroadcastService, times(1))
+                    .broadcastRoundState(eq(ROOM_ID), eq("DRAW"), eq(NICKNAME), same(endedState));
 
-            List<GameMessage> broadcasts = broadcastCaptor.getAllValues();
-            GameMessage roundEndBroadcast = broadcasts.get(1);
+            // ROUND_END: broadcast (scoreDelta 포함)
+            ArgumentCaptor<GameMessage> roundEndCaptor = ArgumentCaptor.forClass(GameMessage.class);
+            verify(gameBroadcastService, times(1)).broadcast(eq(ROOM_ID), roundEndCaptor.capture());
+            GameMessage roundEndBroadcast = roundEndCaptor.getValue();
             assertThat(roundEndBroadcast.type()).isEqualTo("ROUND_END");
             assertThat(roundEndBroadcast.sender()).isEqualTo("SYSTEM");
             assertThat(roundEndBroadcast.payload()).isSameAs(scoreDelta);

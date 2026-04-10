@@ -13,8 +13,8 @@ import org.doubt.dto.RoundState;
 import org.doubt.dto.TournamentState;
 import org.doubt.handler.SessionManager;
 import org.doubt.repository.PokerRoomRepository;
+import org.doubt.service.GameBroadcastService;
 import org.springframework.context.event.EventListener;
-import org.springframework.messaging.simp.SimpMessageSendingOperations;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.socket.messaging.SessionConnectedEvent;
@@ -50,7 +50,7 @@ public class WebSocketEventListener {
 
     private final SessionManager sessionManager;
     private final NicknameRegistry nicknameRegistry;
-    private final SimpMessageSendingOperations messagingTemplate;
+    private final GameBroadcastService gameBroadcastService;
     private final PokerRoomRepository pokerRoomRepository;
     private final ReconnectRegistry reconnectRegistry;
 
@@ -100,7 +100,7 @@ public class WebSocketEventListener {
             attrs.put("userName", nickname);
         }
 
-        broadcast(roomId, new GameMessage("USER_RECONNECTED", roomId, nickname, capturedState));
+        gameBroadcastService.broadcastRoundState(roomId, "USER_RECONNECTED", nickname, capturedState);
     }
 
     // ─────────────────────────────────────────────────────────
@@ -130,7 +130,7 @@ public class WebSocketEventListener {
             // 게임 미진행 중: 즉시 제거
             sessionManager.removeUserFromRoom(roomId, userName);
             nicknameRegistry.release(userName);
-            broadcast(roomId, new GameMessage("USER_DISCONNECTED", roomId, userName, null));
+            gameBroadcastService.broadcast(roomId, new GameMessage("USER_DISCONNECTED", roomId, userName, null));
         }
     }
 
@@ -178,6 +178,7 @@ public class WebSocketEventListener {
                 nicknameRegistry.release(userName);
                 log.warn("[WS] Auto-eliminated due to repeated disconnects: nickname={}, count={}", userName, prs.getDisconnectCount());
                 msgToSend = new GameMessage("AUTO_ELIMINATED", roomId, userName, null);
+
             } else {
                 // 재접속 대기 (AI 인계는 TimerService/GameController에서 수행)
                 prs.setStatus(PlayerStatus.DISCONNECTED);
@@ -188,17 +189,13 @@ public class WebSocketEventListener {
                 msgToSend = new GameMessage("USER_DISCONNECTED", roomId, userName, null);
             }
         }
-        broadcast(roomId, msgToSend);
+        gameBroadcastService.broadcast(roomId, msgToSend);
     }
 
     /** RoundState가 없거나 PlayerRoundState를 찾을 수 없는 경우의 fallback. */
     private void fallbackDisconnect(String roomId, String userName) {
         sessionManager.removeUserFromRoom(roomId, userName);
         nicknameRegistry.release(userName);
-        broadcast(roomId, new GameMessage("USER_DISCONNECTED", roomId, userName, null));
-    }
-
-    private void broadcast(String roomId, GameMessage message) {
-        messagingTemplate.convertAndSend("/topic/room/" + roomId, message);
+        gameBroadcastService.broadcast(roomId, new GameMessage("USER_DISCONNECTED", roomId, userName, null));
     }
 }

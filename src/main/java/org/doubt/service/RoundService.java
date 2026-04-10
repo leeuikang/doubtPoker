@@ -413,9 +413,7 @@ public class RoundService {
                 drawOneFromStock(state, extenderId));
 
         state.getTableMelds().remove(meld);
-        if (request.meldId().equals(state.getLastDoubtableMeldId())) {
-            state.setLastDoubtableMeldId(null);
-        }
+        state.setLastDoubtableMeldId(null); // 자진 공개는 지목 가능 대상 초기화 (직전 멜드 체인 단절)
 
         log.info("[Round] REVEAL_BLUFF playerId={} meldId={}", playerId, request.meldId());
         return state;
@@ -694,6 +692,7 @@ public class RoundService {
 
         state.setCurrentPlayerIndex(nextIndex);
         state.setTurnPhase(TurnPhase.DRAW);
+        state.setLastDoubtableMeldId(null);
         log.info("[Round] turn advanced to playerId={}", turnOrder.get(nextIndex));
     }
 

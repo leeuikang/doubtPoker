@@ -24,11 +24,11 @@ import org.doubt.dto.request.StopRequest;
 import org.doubt.exception.GameException;
 import org.doubt.handler.SessionManager;
 import org.doubt.repository.PokerRoomRepository;
+import org.doubt.service.GameBroadcastService;
 import org.doubt.service.RoundService;
 import org.doubt.service.TournamentService;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
 import java.util.List;
@@ -50,7 +50,7 @@ import java.util.Objects;
 @RequiredArgsConstructor
 public class GameController {
 
-    private final SimpMessagingTemplate messagingTemplate;
+    private final GameBroadcastService gameBroadcastService;
     private final SessionManager sessionManager;
     private final RoundService roundService;
     private final TournamentService tournamentService;
@@ -74,7 +74,7 @@ public class GameController {
         sessionManager.addUserToRoom(message.roomId(), nickname);
 
         GameMessage verified = new GameMessage(message.type(), message.roomId(), nickname, message.payload());
-        broadcast(message.roomId(), verified);
+        gameBroadcastService.broadcast(message.roomId(), verified);
     }
 
     // ─────────────────────────────────────────────────────────
@@ -143,7 +143,7 @@ public class GameController {
             currentRound = room.getTournamentState().getCurrentRound();
         }
 
-        broadcast(message.roomId(), new GameMessage("ROUND_STARTED", message.roomId(), "SYSTEM", startedState));
+        gameBroadcastService.broadcastRoundState(message.roomId(), "ROUND_STARTED", "SYSTEM", startedState);
         log.info("[GameController] round started roomId={} round={}", message.roomId(), currentRound);
     }
 
@@ -186,7 +186,7 @@ public class GameController {
             room.updateActivityTime();
         }
 
-        broadcast(message.roomId(), new GameMessage(message.type(), message.roomId(), nickname, updated));
+        gameBroadcastService.broadcastRoundState(message.roomId(), message.type(), nickname, updated);
         log.info("[GameController] action={} playerId={} roomId={}", action, nickname, message.roomId());
 
         if (updated.getEndCondition() != null) {
@@ -198,6 +198,7 @@ public class GameController {
             Map<String, Integer> finalScores = Map.of();
 
             synchronized (room) {
+                if (room.getStatus() != GameStatus.IN_PROGRESS) return;
                 room.setStatus(GameStatus.ROUND_END);
                 TournamentState tournament = room.getTournamentState();
                 if (tournament != null) {
@@ -224,11 +225,11 @@ public class GameController {
                 }
             }
 
-            broadcast(message.roomId(), new GameMessage("ROUND_END", message.roomId(), "SYSTEM", scoreDelta));
+            gameBroadcastService.broadcast(message.roomId(), new GameMessage("ROUND_END", message.roomId(), "SYSTEM", scoreDelta));
             log.info("[GameController] ROUND_END roomId={} endCondition={}", message.roomId(), updated.getEndCondition());
 
             if (tournamentFinished) {
-                broadcast(message.roomId(), new GameMessage("TOURNAMENT_END", message.roomId(), "SYSTEM",
+                gameBroadcastService.broadcast(message.roomId(), new GameMessage("TOURNAMENT_END", message.roomId(), "SYSTEM",
                         Map.of("winners", tournamentWinners, "scores", finalScores)));
                 log.info("[GameController] TOURNAMENT_END roomId={} winners={}", message.roomId(), tournamentWinners);
             }
@@ -284,9 +285,5 @@ public class GameController {
     private PokerRoom findRoom(String roomId) {
         return pokerRoomRepository.findById(roomId)
                 .orElseThrow(() -> new GameException(ErrorCode.ROOM_NOT_FOUND));
-    }
-
-    private void broadcast(String roomId, GameMessage message) {
-        messagingTemplate.convertAndSend("/topic/room/" + roomId, message);
     }
 }

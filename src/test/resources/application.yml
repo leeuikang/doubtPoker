@@ -1,0 +1,4 @@
+app:
+  auth:
+    secret: doubt-poker-test-secret-not-for-production
+    expiry-hours: 1

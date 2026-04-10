@@ -10,6 +10,7 @@ import org.doubt.dto.PokerRoom;
 import org.doubt.dto.RoundState;
 import org.doubt.handler.SessionManager;
 import org.doubt.repository.PokerRoomRepository;
+import org.doubt.service.GameBroadcastService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -19,7 +20,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.Message;
-import org.springframework.messaging.simp.SimpMessageSendingOperations;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.MessageBuilder;
@@ -35,6 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -47,7 +48,7 @@ class WebSocketEventListenerTest {
     private NicknameRegistry nicknameRegistry;
 
     @Mock
-    private SimpMessageSendingOperations messagingTemplate;
+    private GameBroadcastService gameBroadcastService;
 
     @Mock
     private PokerRoomRepository pokerRoomRepository;
@@ -101,7 +102,7 @@ class WebSocketEventListenerTest {
                     .isThrownBy(() -> webSocketEventListener.handleWebSocketDisconnectListener(event));
 
             verify(sessionManager, never()).removeUserFromRoom(any(), any());
-            verify(messagingTemplate, never()).convertAndSend(any(String.class), any(Object.class));
+            verifyNoInteractions(gameBroadcastService);
         }
 
         @Test
@@ -116,7 +117,7 @@ class WebSocketEventListenerTest {
                     .isThrownBy(() -> webSocketEventListener.handleWebSocketDisconnectListener(event));
 
             verify(sessionManager, never()).removeUserFromRoom(any(), any());
-            verify(messagingTemplate, never()).convertAndSend(any(String.class), any(Object.class));
+            verifyNoInteractions(gameBroadcastService);
         }
 
         @Test
@@ -131,7 +132,7 @@ class WebSocketEventListenerTest {
                     .isThrownBy(() -> webSocketEventListener.handleWebSocketDisconnectListener(event));
 
             verify(sessionManager, never()).removeUserFromRoom(any(), any());
-            verify(messagingTemplate, never()).convertAndSend(any(String.class), any(Object.class));
+            verifyNoInteractions(gameBroadcastService);
         }
 
         @Test
@@ -156,7 +157,7 @@ class WebSocketEventListenerTest {
             verify(nicknameRegistry).release(eq(userName));
 
             ArgumentCaptor<GameMessage> captor = ArgumentCaptor.forClass(GameMessage.class);
-            verify(messagingTemplate).convertAndSend(eq("/topic/room/" + roomId), captor.capture());
+            verify(gameBroadcastService).broadcast(eq(roomId), captor.capture());
 
             GameMessage sent = captor.getValue();
             assertThat(sent.type()).isEqualTo("USER_DISCONNECTED");
@@ -199,7 +200,7 @@ class WebSocketEventListenerTest {
             verify(nicknameRegistry).release(eq(userName));
 
             ArgumentCaptor<GameMessage> captor = ArgumentCaptor.forClass(GameMessage.class);
-            verify(messagingTemplate).convertAndSend(eq("/topic/room/" + roomId), captor.capture());
+            verify(gameBroadcastService).broadcast(eq(roomId), captor.capture());
             assertThat(captor.getValue().type()).isEqualTo("USER_DISCONNECTED");
         }
 
@@ -237,7 +238,7 @@ class WebSocketEventListenerTest {
             verify(sessionManager).removeUserFromRoom(eq(roomId), eq(userName));
 
             ArgumentCaptor<GameMessage> captor = ArgumentCaptor.forClass(GameMessage.class);
-            verify(messagingTemplate).convertAndSend(eq("/topic/room/" + roomId), captor.capture());
+            verify(gameBroadcastService).broadcast(eq(roomId), captor.capture());
             assertThat(captor.getValue().type()).isEqualTo("AUTO_ELIMINATED");
         }
 
@@ -252,7 +253,7 @@ class WebSocketEventListenerTest {
                     .isThrownBy(() -> webSocketEventListener.handleWebSocketDisconnectListener(event));
 
             verify(sessionManager, never()).removeUserFromRoom(any(), any());
-            verify(messagingTemplate, never()).convertAndSend(any(String.class), any(Object.class));
+            verifyNoInteractions(gameBroadcastService);
         }
     }
 
@@ -276,7 +277,7 @@ class WebSocketEventListenerTest {
             webSocketEventListener.handleWebSocketConnectListener(event);
 
             verify(pokerRoomRepository, never()).findById(any());
-            verify(messagingTemplate, never()).convertAndSend(any(String.class), any(Object.class));
+            verifyNoInteractions(gameBroadcastService);
         }
 
         @Test
@@ -323,14 +324,11 @@ class WebSocketEventListenerTest {
 
             verify(reconnectRegistry).clear(nickname);
             verify(sessionManager).addUserToRoom(eq(roomId), eq(nickname));
-
-            ArgumentCaptor<GameMessage> captor = ArgumentCaptor.forClass(GameMessage.class);
-            verify(messagingTemplate).convertAndSend(eq("/topic/room/" + roomId), captor.capture());
-            assertThat(captor.getValue().type()).isEqualTo("USER_RECONNECTED");
+            verify(gameBroadcastService).broadcastRoundState(eq(roomId), eq("USER_RECONNECTED"), eq(nickname), any(RoundState.class));
         }
 
         @Test
-        @DisplayName("재접속 — broadcast 는 synchronized 블록 내 캡처된 RoundState 를 사용한다 (레이스 컨디션 방지)")
+        @DisplayName("재접속 — broadcastRoundState 는 synchronized 블록 내 캡처된 RoundState 를 사용한다 (레이스 컨디션 방지)")
         void reconnect_broadcast_uses_state_captured_inside_synchronized_block() {
             String roomId = "room-race";
             String nickname = "charlie";
@@ -356,13 +354,9 @@ class WebSocketEventListenerTest {
             SessionConnectedEvent event = buildConnectEvent(attrs);
             webSocketEventListener.handleWebSocketConnectListener(event);
 
-            ArgumentCaptor<GameMessage> captor = ArgumentCaptor.forClass(GameMessage.class);
-            verify(messagingTemplate).convertAndSend(eq("/topic/room/" + roomId), captor.capture());
-
-            GameMessage sent = captor.getValue();
-            assertThat(sent.type()).isEqualTo("USER_RECONNECTED");
-            // broadcast 페이로드가 synchronized 블록 진입 시점의 RoundState 와 동일한 인스턴스인지 검증
-            assertThat(sent.payload()).isSameAs(stateAtReconnect);
+            // broadcastRoundState 에 전달된 RoundState 가 synchronized 블록 진입 시점의 인스턴스인지 검증
+            verify(gameBroadcastService).broadcastRoundState(
+                    eq(roomId), eq("USER_RECONNECTED"), eq(nickname), same(stateAtReconnect));
         }
 
         @Test
@@ -382,7 +376,7 @@ class WebSocketEventListenerTest {
 
             verify(reconnectRegistry).clear(nickname);
             verify(sessionManager, never()).addUserToRoom(any(), any());
-            verify(messagingTemplate, never()).convertAndSend(any(String.class), any(Object.class));
+            verifyNoInteractions(gameBroadcastService);
         }
     }
 }

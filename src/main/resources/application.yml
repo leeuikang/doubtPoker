@@ -4,5 +4,6 @@ spring:
 
 app:
   auth:
-    secret: doubt-poker-secret-key-change-in-production
+    # 반드시 환경 변수 APP_AUTH_SECRET 을 주입해야 한다. 미설정 시 서버 기동 실패.
+    secret: ${APP_AUTH_SECRET}
     expiry-hours: 1

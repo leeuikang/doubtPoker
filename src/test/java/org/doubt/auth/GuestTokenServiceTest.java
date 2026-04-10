@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("GuestTokenService")
@@ -82,6 +83,83 @@ class GuestTokenServiceTest {
             String token2 = tokenService.issue("alice");
 
             assertThat(token1).isNotEqualTo(token2);
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // 테스트용 헬퍼: 만료 시각이 지정된 CSRF 토큰 빌드
+    // ----------------------------------------------------------------
+    private String buildValidCsrfTokenWithExpiry(String guestId, long expiresAt) throws Exception {
+        long now = System.currentTimeMillis();
+        String raw = guestId + ":" + now + ":" + expiresAt;
+        String payloadB64 = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(raw.getBytes(StandardCharsets.UTF_8));
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(SECRET.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+        byte[] sigBytes = mac.doFinal(payloadB64.getBytes(StandardCharsets.UTF_8));
+        String signatureB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(sigBytes);
+        return payloadB64 + "." + signatureB64;
+    }
+
+    // ----------------------------------------------------------------
+
+    @Nested
+    @DisplayName("issueCsrfToken / verifyCsrfToken")
+    class CsrfToken {
+
+        @Test
+        @DisplayName("발급한 CSRF 토큰은 즉시 검증에 성공하고 올바른 guestId를 반환한다")
+        void issued_csrf_token_verifies_successfully() {
+            String guestId = "some-guest-uuid";
+            String csrfToken = tokenService.issueCsrfToken(guestId);
+
+            assertThatNoException().isThrownBy(() -> {
+                String returnedGuestId = tokenService.verifyCsrfToken(csrfToken);
+                assertThat(returnedGuestId).isEqualTo(guestId);
+            });
+        }
+
+        @Test
+        @DisplayName("만료된 CSRF 토큰은 TOKEN_EXPIRED 예외를 던진다")
+        void expired_csrf_token_throws_token_expired() throws Exception {
+            long pastExpiry = System.currentTimeMillis() - 1000;
+            String expiredCsrfToken = buildValidCsrfTokenWithExpiry("guest-id", pastExpiry);
+
+            assertThatThrownBy(() -> tokenService.verifyCsrfToken(expiredCsrfToken))
+                    .isInstanceOf(GameException.class)
+                    .satisfies(ex -> assertThat(((GameException) ex).getErrorCode())
+                            .isEqualTo(ErrorCode.TOKEN_EXPIRED));
+        }
+
+        @Test
+        @DisplayName("서명이 변조된 CSRF 토큰은 TOKEN_INVALID 예외를 던진다")
+        void tampered_csrf_token_throws_token_invalid() {
+            String csrfToken = tokenService.issueCsrfToken("guest-id");
+            String[] parts = csrfToken.split("\\.", 2);
+            String tampered = parts[0] + ".INVALIDSIGNATURE";
+
+            assertThatThrownBy(() -> tokenService.verifyCsrfToken(tampered))
+                    .isInstanceOf(GameException.class)
+                    .satisfies(ex -> assertThat(((GameException) ex).getErrorCode())
+                            .isEqualTo(ErrorCode.TOKEN_INVALID));
+        }
+
+        @Test
+        @DisplayName("점(.) 구분자가 없는 CSRF 토큰은 TOKEN_INVALID 예외를 던진다")
+        void malformed_csrf_token_throws_token_invalid() {
+            assertThatThrownBy(() -> tokenService.verifyCsrfToken("nodottoken"))
+                    .isInstanceOf(GameException.class)
+                    .satisfies(ex -> assertThat(((GameException) ex).getErrorCode())
+                            .isEqualTo(ErrorCode.TOKEN_INVALID));
+        }
+
+        @Test
+        @DisplayName("null CSRF 토큰은 TOKEN_INVALID 예외를 던진다")
+        void null_csrf_token_throws_token_invalid() {
+            assertThatThrownBy(() -> tokenService.verifyCsrfToken(null))
+                    .isInstanceOf(GameException.class)
+                    .satisfies(ex -> assertThat(((GameException) ex).getErrorCode())
+                            .isEqualTo(ErrorCode.TOKEN_INVALID));
         }
     }
 

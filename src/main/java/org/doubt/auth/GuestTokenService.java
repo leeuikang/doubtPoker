@@ -31,6 +31,7 @@ public class GuestTokenService {
 
     private static final String ALGORITHM = "HmacSHA256";
     private static final int PAYLOAD_FIELDS = 5;
+    private static final int CSRF_PAYLOAD_FIELDS = 3;
 
     private final byte[] secretKeyBytes;
     private final long expiryMillis;
@@ -57,26 +58,45 @@ public class GuestTokenService {
     }
 
     /**
-     * CSRF 토큰 발급 (포맷: {guestId}.{HMAC(guestId + ":csrf")})
-     * 무상태(stateless) — 서버 재시작 전까지 유효하며 별도 저장소 불필요.
+     * CSRF 토큰 발급 (포맷: {Base64Url(guestId:issuedAt:expiresAt)}.{HMAC(payload)})
+     * 무상태(stateless) — auth 토큰과 동일한 만료 시간 적용.
      */
     public String issueCsrfToken(String guestId) {
-        String sig = base64Encode(hmac(guestId + ":csrf"));
-        return guestId + "." + sig;
+        long now = System.currentTimeMillis();
+        long expiresAt = now + expiryMillis;
+        String raw = guestId + ":" + now + ":" + expiresAt;
+        String payloadB64 = base64Encode(raw);
+        String sig = base64Encode(hmac(payloadB64));
+        return payloadB64 + "." + sig;
     }
 
     /**
      * CSRF 토큰 검증 후 guestId 반환.
-     * 서명이 틀리면 TOKEN_INVALID 예외.
+     * 서명 불일치 시 TOKEN_INVALID, 만료 시 TOKEN_EXPIRED 예외.
      */
     public String verifyCsrfToken(String csrfToken) {
         if (csrfToken == null) throw new GameException(ErrorCode.TOKEN_INVALID);
         String[] parts = csrfToken.split("\\.", 2);
         if (parts.length != 2) throw new GameException(ErrorCode.TOKEN_INVALID);
-        String guestId = parts[0];
-        String expected = base64Encode(hmac(guestId + ":csrf"));
+
+        String payloadB64 = parts[0];
+        String expected = base64Encode(hmac(payloadB64));
         if (!constantTimeEquals(expected, parts[1])) throw new GameException(ErrorCode.TOKEN_INVALID);
-        return guestId;
+
+        String raw = base64Decode(payloadB64);
+        String[] fields = raw.split(":", CSRF_PAYLOAD_FIELDS);
+        if (fields.length != CSRF_PAYLOAD_FIELDS) throw new GameException(ErrorCode.TOKEN_INVALID);
+
+        long expiresAt;
+        try {
+            expiresAt = Long.parseLong(fields[2]);
+        } catch (NumberFormatException e) {
+            throw new GameException(ErrorCode.TOKEN_INVALID);
+        }
+
+        if (System.currentTimeMillis() > expiresAt) throw new GameException(ErrorCode.TOKEN_EXPIRED);
+
+        return fields[0]; // guestId
     }
 
     public GuestClaims verify(String token) {

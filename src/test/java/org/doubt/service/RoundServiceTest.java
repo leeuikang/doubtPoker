@@ -2127,6 +2127,22 @@ class RoundServiceTest {
         }
 
         @Test
+        @DisplayName("자진 공개 멜드가 lastDoubtableMeldId 와 달라도 항상 null 로 초기화된다 (S-3)")
+        void reveal_bluff_always_clears_last_doubtable_meld_id_even_when_different() {
+            RoundState state = buildTwoPlayerActionStateForReveal(makeCards(3));
+            List<Card> actualCards = new ArrayList<>(List.of(new Card(Suit.SPADE, Rank.TWO)));
+            Meld meld = Meld.create("meld-1", P1, MeldType.SOLO_SEVEN,
+                    actualCards, toHonestDeclared(actualCards), true);
+            state.getTableMelds().add(meld);
+            // lastDoubtableMeldId 가 다른 멜드를 가리키도록 설정
+            state.setLastDoubtableMeldId("other-meld-id");
+
+            roundService.handleRevealBluff(state, P1, new RevealBluffRequest("meld-1"));
+
+            assertThat(state.getLastDoubtableMeldId()).isNull();
+        }
+
+        @Test
         @DisplayName("확장자가 없을 때: 소유자만 카드를 돌려받고 P2 손패에 변화가 없다")
         void happy_path_no_extenders_only_owner_gets_cards_back() {
             RoundState state = buildTwoPlayerActionStateForReveal(makeCards(3));
