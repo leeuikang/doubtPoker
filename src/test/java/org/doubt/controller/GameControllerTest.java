@@ -388,14 +388,14 @@ class GameControllerTest {
 
             Map<String, Integer> scoreDelta = Map.of(NICKNAME, 5);
             when(roundService.determineWinners(endedState)).thenReturn(List.of(NICKNAME));
-            when(roundService.resolveRound(endedState)).thenReturn(scoreDelta);
+            when(roundService.resolveRound(eq(endedState), eq(List.of(NICKNAME)))).thenReturn(scoreDelta);
 
             GameMessage message = new GameMessage(GameAction.DRAW.name(), ROOM_ID, NICKNAME, null);
 
             gameController.processAction(message, validAccessor());
 
-            // resolveRound must be called exactly once with the ended state
-            verify(roundService, times(1)).resolveRound(endedState);
+            // resolveRound must be called exactly once with the ended state and pre-computed winners
+            verify(roundService, times(1)).resolveRound(eq(endedState), eq(List.of(NICKNAME)));
 
             // Room status updated to ROUND_END
             assertThat(room.getStatus()).isEqualTo(GameStatus.ROUND_END);

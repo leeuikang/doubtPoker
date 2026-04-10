@@ -5,6 +5,7 @@ import lombok.Setter;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 토너먼트(10판) 전체 진행 상태
@@ -20,7 +21,7 @@ public class TournamentState {
     private int currentRound;
     private final int maxRounds = 10;
     private Map<String, Integer> scores;       // playerId → 현재 점수
-    private List<String> eliminatedPlayers;
+    private Set<String> eliminatedPlayers;
     private List<Map<String, Integer>> roundHistory; // 라운드별 점수 델타
     private String lastRoundWinnerId;               // 직전 라운드 승자 ID (다음 라운드 선 플레이어)
 

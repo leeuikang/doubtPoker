@@ -8,7 +8,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class SessionManager {
-    private Map<String, Set<String>> sessionMap = new ConcurrentHashMap<>();
+    private final Map<String, Set<String>> sessionMap = new ConcurrentHashMap<>();
 
     public void addUserToRoom(String roomId, String userName) {
         sessionMap.computeIfAbsent(roomId, k -> ConcurrentHashMap.newKeySet()).add(userName);

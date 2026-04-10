@@ -10,6 +10,7 @@ import org.doubt.constant.GameStatus;
 import org.doubt.constant.PlayerStatus;
 import org.doubt.dto.GameMessage;
 import org.doubt.dto.PlayerRoundState;
+import org.doubt.dto.PokerPlayer;
 import org.doubt.dto.PokerRoom;
 import org.doubt.dto.RoundState;
 import org.doubt.dto.TournamentState;
@@ -108,7 +109,7 @@ public class GameController {
             }
 
             List<String> allPlayerIds = room.getPlayerList().stream()
-                    .map(p -> p.getName())
+                    .map(PokerPlayer::getName)
                     .toList();
 
             TournamentState tournament = room.getTournamentState();
@@ -190,7 +191,7 @@ public class GameController {
 
         if (updated.getEndCondition() != null) {
             List<String> roundWinnerIds = roundService.determineWinners(updated);
-            Map<String, Integer> scoreDelta = roundService.resolveRound(updated);
+            Map<String, Integer> scoreDelta = roundService.resolveRound(updated, roundWinnerIds);
 
             boolean tournamentFinished = false;
             List<String> tournamentWinners = List.of();

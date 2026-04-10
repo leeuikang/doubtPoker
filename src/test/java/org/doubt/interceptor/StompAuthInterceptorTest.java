@@ -52,8 +52,12 @@ class StompAuthInterceptorTest {
     // 헬퍼: STOMP 메시지 생성
     // ----------------------------------------------------------------
     private Message<byte[]> buildConnectMessage(String authHeaderValue) {
+        return buildConnectMessage(authHeaderValue, new HashMap<>());
+    }
+
+    private Message<byte[]> buildConnectMessage(String authHeaderValue, Map<String, Object> sessionAttributes) {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
-        accessor.setSessionAttributes(new HashMap<>());
+        accessor.setSessionAttributes(sessionAttributes);
         if (authHeaderValue != null) {
             accessor.addNativeHeader("Authorization", authHeaderValue);
         }
@@ -81,7 +85,10 @@ class StompAuthInterceptorTest {
             GuestClaims claims = new GuestClaims("guest-uuid-123", "홍길동");
             when(guestTokenService.verify(token)).thenReturn(claims);
 
-            Message<byte[]> message = buildConnectMessage("Bearer " + token);
+            // CSRF 교차 검증: 핸드셰이크 단계에서 저장된 csrfGuestId가 세션 속성에 있어야 함
+            Map<String, Object> sessionAttrs = new HashMap<>();
+            sessionAttrs.put("csrfGuestId", "guest-uuid-123");
+            Message<byte[]> message = buildConnectMessage("Bearer " + token, sessionAttrs);
             Message<?> result = interceptor.preSend(message, messageChannel);
 
             assertThat(result).isNotNull();

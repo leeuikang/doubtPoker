@@ -29,11 +29,11 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * 라운드 진행 오케스트레이션 서비스
@@ -273,6 +273,7 @@ public class RoundService {
 
         // 마지막 1장 버림 → 고잉아웃
         if (playerState.getHand().isEmpty()) {
+            playerState.setHasMeldedThisTurn(false);
             state.setEndCondition(RoundEndCondition.GOING_OUT);
             log.info("[Round] GOING_OUT via discard playerId={}", playerId);
             return state;
@@ -519,8 +520,7 @@ public class RoundService {
      *
      * @return playerId → 점수 변화량 (양수=획득, 음수=차감)
      */
-    public Map<String, Integer> resolveRound(RoundState state) {
-        List<String> winnerIds = determineWinners(state);
+    public Map<String, Integer> resolveRound(RoundState state, List<String> winnerIds) {
         log.info("[Round] resolved endCondition={} winners={}", state.getEndCondition(), winnerIds);
         return scoreService.calculateRoundScoreDelta(
                 state.getPlayerStates(), winnerIds, state.getEndCondition());
@@ -546,12 +546,10 @@ public class RoundService {
 
     /** STOP / STOCK_DEPLETED: ACTIVE 플레이어 중 핸드 점수 최솟값 보유자 (공동 가능) */
     private List<String> findLowestScoreWinners(RoundState state) {
-        Map<String, Integer> scores = new HashMap<>();
-        state.getPlayerStates().forEach((id, prs) -> {
-            if (prs.getStatus() == PlayerStatus.ACTIVE) {
-                scores.put(id, scoreService.calculateHandScore(prs.getHand()));
-            }
-        });
+        Map<String, Integer> scores = state.getPlayerStates().entrySet().stream()
+                .filter(e -> e.getValue().getStatus() == PlayerStatus.ACTIVE)
+                .collect(Collectors.toMap(Map.Entry::getKey,
+                        e -> scoreService.calculateHandScore(e.getValue().getHand())));
         if (scores.isEmpty()) return List.of();
         int minScore = Collections.min(scores.values());
         return scores.entrySet().stream()

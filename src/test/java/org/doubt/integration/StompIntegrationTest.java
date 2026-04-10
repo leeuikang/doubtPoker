@@ -60,11 +60,13 @@ class StompIntegrationTest {
 
     /** 유효한 Bearer 토큰으로 CONNECT → 세션 수립 성공 */
     private StompSession connectWithToken(String token) throws Exception {
+        String guestId = guestTokenService.verify(token).guestId();
+        String csrfToken = guestTokenService.issueCsrfToken(guestId);
         StompHeaders connectHeaders = new StompHeaders();
         connectHeaders.add("Authorization", "Bearer " + token);
 
         return stompClient.connectAsync(
-                wsUrl,
+                wsUrl + "?csrf=" + csrfToken,
                 new WebSocketHttpHeaders(),
                 connectHeaders,
                 new StompSessionHandlerAdapter() {}
@@ -145,8 +147,10 @@ class StompIntegrationTest {
             assertThat(session1.isConnected()).isTrue();
 
             String token2 = guestTokenService.issue("중복닉네임");
+            String guestId2 = guestTokenService.verify(token2).guestId();
+            String csrfToken2 = guestTokenService.issueCsrfToken(guestId2);
             CompletableFuture<StompSession> future = stompClient.connectAsync(
-                    wsUrl,
+                    wsUrl + "?csrf=" + csrfToken2,
                     new WebSocketHttpHeaders(),
                     buildAuthHeaders(token2),
                     new StompSessionHandlerAdapter() {}

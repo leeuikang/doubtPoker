@@ -7,6 +7,7 @@ import org.doubt.dto.TournamentState;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -46,7 +47,7 @@ public class TournamentService {
         Map<String, Integer> scores = new ConcurrentHashMap<>();
         playerIds.forEach(id -> scores.put(id, GameConstants.TOURNAMENT_START_SCORE));
         tournament.setScores(scores);
-        tournament.setEliminatedPlayers(new ArrayList<>());
+        tournament.setEliminatedPlayers(new HashSet<>());
         tournament.setRoundHistory(new ArrayList<>());
         tournament.setLastRoundWinnerId(null);
 

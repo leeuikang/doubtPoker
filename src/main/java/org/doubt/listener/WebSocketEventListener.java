@@ -82,11 +82,12 @@ public class WebSocketEventListener {
             return;
         }
 
+        RoundState capturedState = null;
         synchronized (room) {
-            RoundState state = room.getRoundState();
-            if (state == null) return;
+            capturedState = room.getRoundState();
+            if (capturedState == null) return;
 
-            PlayerRoundState prs = state.getPlayerStates().get(nickname);
+            PlayerRoundState prs = capturedState.getPlayerStates().get(nickname);
             if (prs == null) return;
 
             if (prs.getStatus() == PlayerStatus.DISCONNECTED || prs.getStatus() == PlayerStatus.AI_CONTROLLED) {
@@ -99,7 +100,7 @@ public class WebSocketEventListener {
             attrs.put("userName", nickname);
         }
 
-        broadcast(roomId, new GameMessage("USER_RECONNECTED", roomId, nickname, room.getRoundState()));
+        broadcast(roomId, new GameMessage("USER_RECONNECTED", roomId, nickname, capturedState));
     }
 
     // ─────────────────────────────────────────────────────────
@@ -146,6 +147,7 @@ public class WebSocketEventListener {
      * </ul>
      */
     private void handleInGameDisconnect(PokerRoom room, String roomId, String userName) {
+        GameMessage msgToSend;
         synchronized (room) {
             RoundState state = room.getRoundState();
             if (state == null) {
@@ -175,7 +177,7 @@ public class WebSocketEventListener {
                 sessionManager.removeUserFromRoom(roomId, userName);
                 nicknameRegistry.release(userName);
                 log.warn("[WS] Auto-eliminated due to repeated disconnects: nickname={}, count={}", userName, prs.getDisconnectCount());
-                broadcast(roomId, new GameMessage("AUTO_ELIMINATED", roomId, userName, null));
+                msgToSend = new GameMessage("AUTO_ELIMINATED", roomId, userName, null);
             } else {
                 // 재접속 대기 (AI 인계는 TimerService/GameController에서 수행)
                 prs.setStatus(PlayerStatus.DISCONNECTED);
@@ -183,9 +185,10 @@ public class WebSocketEventListener {
                 nicknameRegistry.release(userName);
                 reconnectRegistry.track(userName, roomId);
                 log.info("[WS] Player marked DISCONNECTED, awaiting reconnect: nickname={}, disconnectCount={}", userName, prs.getDisconnectCount());
-                broadcast(roomId, new GameMessage("USER_DISCONNECTED", roomId, userName, null));
+                msgToSend = new GameMessage("USER_DISCONNECTED", roomId, userName, null);
             }
         }
+        broadcast(roomId, msgToSend);
     }
 
     /** RoundState가 없거나 PlayerRoundState를 찾을 수 없는 경우의 fallback. */

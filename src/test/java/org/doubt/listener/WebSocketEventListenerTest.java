@@ -330,6 +330,42 @@ class WebSocketEventListenerTest {
         }
 
         @Test
+        @DisplayName("재접속 — broadcast 는 synchronized 블록 내 캡처된 RoundState 를 사용한다 (레이스 컨디션 방지)")
+        void reconnect_broadcast_uses_state_captured_inside_synchronized_block() {
+            String roomId = "room-race";
+            String nickname = "charlie";
+
+            Map<String, Object> attrs = new HashMap<>();
+            attrs.put("nickname", nickname);
+
+            when(reconnectRegistry.findRoom(nickname)).thenReturn(Optional.of(roomId));
+
+            PokerRoom room = new PokerRoom(roomId, "Test Room");
+            room.setStatus(GameStatus.IN_PROGRESS);
+
+            PlayerRoundState prs = new PlayerRoundState();
+            prs.setPlayerId(nickname);
+            prs.setStatus(PlayerStatus.DISCONNECTED);
+
+            RoundState stateAtReconnect = new RoundState();
+            stateAtReconnect.setPlayerStates(new HashMap<>(Map.of(nickname, prs)));
+            room.setRoundState(stateAtReconnect);
+
+            when(pokerRoomRepository.findById(roomId)).thenReturn(Optional.of(room));
+
+            SessionConnectedEvent event = buildConnectEvent(attrs);
+            webSocketEventListener.handleWebSocketConnectListener(event);
+
+            ArgumentCaptor<GameMessage> captor = ArgumentCaptor.forClass(GameMessage.class);
+            verify(messagingTemplate).convertAndSend(eq("/topic/room/" + roomId), captor.capture());
+
+            GameMessage sent = captor.getValue();
+            assertThat(sent.type()).isEqualTo("USER_RECONNECTED");
+            // broadcast 페이로드가 synchronized 블록 진입 시점의 RoundState 와 동일한 인스턴스인지 검증
+            assertThat(sent.payload()).isSameAs(stateAtReconnect);
+        }
+
+        @Test
         @DisplayName("재접속 — 방이 존재하지 않으면 상태를 복원하지 않는다")
         void reconnect_roomNotFound_noRestore() {
             String roomId = "ghost-room";

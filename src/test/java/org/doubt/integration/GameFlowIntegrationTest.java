@@ -64,10 +64,13 @@ class GameFlowIntegrationTest {
 
     private StompSession connectWithNickname(String nickname) throws Exception {
         String token = guestTokenService.issue(nickname);
+        String guestId = guestTokenService.verify(token).guestId();
+        String csrfToken = guestTokenService.issueCsrfToken(guestId);
         StompHeaders headers = new StompHeaders();
         headers.add("Authorization", "Bearer " + token);
         return stompClient.connectAsync(
-                wsUrl, new WebSocketHttpHeaders(), headers, new StompSessionHandlerAdapter() {}
+                wsUrl + "?csrf=" + csrfToken,
+                new WebSocketHttpHeaders(), headers, new StompSessionHandlerAdapter() {}
         ).get(5, TimeUnit.SECONDS);
     }
 

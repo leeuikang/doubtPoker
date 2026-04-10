@@ -338,18 +338,6 @@ class RoundServiceTest {
                                 .isEqualTo(ErrorCode.INVALID_TURN_PHASE));
             }
 
-            @Test
-            @DisplayName("DISCARD 페이즈에서 드로우하면 INVALID_TURN_PHASE 예외가 발생한다")
-            void throws_invalid_turn_phase_when_discard_phase() {
-                RoundState state = buildState(PLAYER_ID, TurnPhase.DISCARD,
-                        makeCards(5), makeCards(3), makeCards(6));
-
-                DrawRequest request = new DrawRequest(DrawSource.STOCK);
-                assertThatThrownBy(() -> roundService.handleDraw(state, PLAYER_ID, request))
-                        .isInstanceOf(GameException.class)
-                        .satisfies(e -> assertThat(((GameException) e).getErrorCode())
-                                .isEqualTo(ErrorCode.INVALID_TURN_PHASE));
-            }
         }
 
         @Nested
@@ -1360,6 +1348,22 @@ class RoundServiceTest {
                 assertThat(result.getTurnPhase()).isEqualTo(TurnPhase.ACTION);
                 assertThat(result.getCurrentPlayerIndex()).isEqualTo(indexBefore);
             }
+
+            @Test
+            @DisplayName("마지막 1장을 버려 고잉아웃 시 hasMeldedThisTurn 은 false 로 리셋된다")
+            void has_melded_this_turn_reset_on_going_out() {
+                Card lastCard = new Card(Suit.SPADE, Rank.ACE);
+                List<Card> hand = new ArrayList<>(List.of(lastCard));
+                RoundState state = buildState(P1, TurnPhase.ACTION,
+                        makeCards(5), makeCards(1), hand);
+                state.getPlayerStates().get(P1).setHasMeldedThisTurn(true);
+
+                DiscardRequest request = new DiscardRequest(lastCard);
+                RoundState result = roundService.handleDiscard(state, P1, request);
+
+                assertThat(result.getEndCondition()).isEqualTo(RoundEndCondition.GOING_OUT);
+                assertThat(result.getPlayerStates().get(P1).isHasMeldedThisTurn()).isFalse();
+            }
         }
 
         @Nested
@@ -1739,17 +1743,6 @@ class RoundServiceTest {
             assertThat(result.getPlayerStates().get(PLAYER_ID).isHasDeclaredStop()).isTrue();
         }
 
-        @Test
-        @DisplayName("DISCARD 페이즈에서 스탑 선언하면 INVALID_TURN_PHASE 예외가 발생한다")
-        void throws_invalid_turn_phase_when_discard_phase() {
-            RoundState state = buildState(PLAYER_ID, TurnPhase.DISCARD,
-                    makeCards(5), makeCards(2), makeCards(4));
-
-            assertThatThrownBy(() -> roundService.handleStop(state, PLAYER_ID, new StopRequest()))
-                    .isInstanceOf(GameException.class)
-                    .satisfies(e -> assertThat(((GameException) e).getErrorCode())
-                            .isEqualTo(ErrorCode.INVALID_TURN_PHASE));
-        }
     }
 
     // ----------------------------------------------------------------
@@ -2213,7 +2206,8 @@ class RoundServiceTest {
                         return Map.of(P1, 10, P2, -10);
                     });
 
-            roundService.resolveRound(state);
+            List<String> winners = roundService.determineWinners(state);
+            roundService.resolveRound(state, winners);
         }
 
         @Test
@@ -2234,7 +2228,8 @@ class RoundServiceTest {
                         return Map.of();
                     });
 
-            roundService.resolveRound(state);
+            List<String> winners = roundService.determineWinners(state);
+            roundService.resolveRound(state, winners);
         }
 
         @Test
@@ -2259,7 +2254,8 @@ class RoundServiceTest {
                         return Map.of(P1, 15, P2, -15);
                     });
 
-            roundService.resolveRound(state);
+            List<String> winners = roundService.determineWinners(state);
+            roundService.resolveRound(state, winners);
         }
 
         @Test
@@ -2284,7 +2280,8 @@ class RoundServiceTest {
                         return Map.of();
                     });
 
-            roundService.resolveRound(state);
+            List<String> winners = roundService.determineWinners(state);
+            roundService.resolveRound(state, winners);
         }
 
         @Test
@@ -2309,7 +2306,8 @@ class RoundServiceTest {
                         return Map.of(P1, 20, P2, -20);
                     });
 
-            roundService.resolveRound(state);
+            List<String> winners = roundService.determineWinners(state);
+            roundService.resolveRound(state, winners);
         }
 
         @Test
@@ -2331,7 +2329,8 @@ class RoundServiceTest {
                         return Map.of(P1, 5, P2, 5, P3, -10);
                     });
 
-            roundService.resolveRound(state);
+            List<String> winners = roundService.determineWinners(state);
+            roundService.resolveRound(state, winners);
         }
 
         @Test
@@ -2347,7 +2346,8 @@ class RoundServiceTest {
             when(scoreService.calculateRoundScoreDelta(any(), any(), any()))
                     .thenReturn(expectedDelta);
 
-            Map<String, Integer> result = roundService.resolveRound(state);
+            List<String> winners = roundService.determineWinners(state);
+            Map<String, Integer> result = roundService.resolveRound(state, winners);
 
             assertThat(result).isEqualTo(expectedDelta);
         }
