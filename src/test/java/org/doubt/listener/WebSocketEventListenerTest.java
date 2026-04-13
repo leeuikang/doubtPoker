@@ -56,6 +56,9 @@ class WebSocketEventListenerTest {
     @Mock
     private ReconnectRegistry reconnectRegistry;
 
+    @Mock
+    private org.doubt.service.TournamentService tournamentService;
+
     @InjectMocks
     private WebSocketEventListener webSocketEventListener;
 
@@ -166,14 +169,16 @@ class WebSocketEventListenerTest {
         }
 
         @Test
-        @DisplayName("게임 진행 중 첫 끊김 — DISCONNECTED 마킹 후 ReconnectRegistry 에 등록")
+        @DisplayName("게임 진행 중 첫 끊김 — DISCONNECTED 마킹 후 guestId 포함하여 ReconnectRegistry 에 등록")
         void inGame_firstDisconnect_marksDisconnectedAndTracks() {
             String roomId = "room-1";
             String userName = "charlie";
+            String guestId = "guest-uuid-charlie";
 
             Map<String, Object> attrs = new HashMap<>();
             attrs.put("roomId", roomId);
             attrs.put("userName", userName);
+            attrs.put("guestId", guestId);
 
             PokerRoom room = new PokerRoom(roomId, "Test Room");
             room.setStatus(GameStatus.IN_PROGRESS);
@@ -195,7 +200,7 @@ class WebSocketEventListenerTest {
             assertThat(prs.getStatus()).isEqualTo(PlayerStatus.DISCONNECTED);
             assertThat(prs.getDisconnectCount()).isEqualTo(1);
 
-            verify(reconnectRegistry).track(eq(userName), eq(roomId));
+            verify(reconnectRegistry).track(eq(userName), eq(roomId), eq(guestId));
             verify(sessionManager).removeUserFromRoom(eq(roomId), eq(userName));
             verify(nicknameRegistry).release(eq(userName));
 
@@ -234,7 +239,7 @@ class WebSocketEventListenerTest {
             assertThat(prs.getStatus()).isEqualTo(PlayerStatus.ELIMINATED);
             assertThat(prs.getDisconnectCount()).isEqualTo(GameConstants.MAX_DISCONNECT_COUNT);
 
-            verify(reconnectRegistry, never()).track(any(), any());
+            verify(reconnectRegistry, never()).track(any(), any(), any());
             verify(sessionManager).removeUserFromRoom(eq(roomId), eq(userName));
 
             ArgumentCaptor<GameMessage> captor = ArgumentCaptor.forClass(GameMessage.class);
@@ -292,15 +297,42 @@ class WebSocketEventListenerTest {
         }
 
         @Test
-        @DisplayName("재접속 — DISCONNECTED 플레이어를 ACTIVE 로 복원하고 USER_RECONNECTED 브로드캐스트")
-        void reconnect_restoresActiveAndBroadcasts() {
+        @DisplayName("재접속 — guestId 불일치 시 레지스트리를 클리어하고 상태를 복원하지 않으며 브로드캐스트도 호출하지 않는다")
+        void reconnect_guestId_mismatch_clears_registry_and_does_not_restore() {
             String roomId = "room-99";
             String nickname = "bob";
+            String correctGuestId = "guest-uuid-correct";
+            String wrongGuestId = "guest-uuid-wrong";
 
             Map<String, Object> attrs = new HashMap<>();
             attrs.put("nickname", nickname);
+            attrs.put("guestId", wrongGuestId);
 
             when(reconnectRegistry.findRoom(nickname)).thenReturn(Optional.of(roomId));
+            when(reconnectRegistry.verifyGuestId(nickname, wrongGuestId)).thenReturn(false);
+
+            SessionConnectedEvent event = buildConnectEvent(attrs);
+            webSocketEventListener.handleWebSocketConnectListener(event);
+
+            verify(reconnectRegistry).clear(nickname);
+            verify(pokerRoomRepository, never()).findById(any());
+            verifyNoInteractions(gameBroadcastService);
+            verify(sessionManager, never()).addUserToRoom(any(), any());
+        }
+
+        @Test
+        @DisplayName("재접속 — guestId 일치 시 DISCONNECTED 플레이어를 ACTIVE 로 복원하고 USER_RECONNECTED 브로드캐스트")
+        void reconnect_restoresActiveAndBroadcasts() {
+            String roomId = "room-99";
+            String nickname = "bob";
+            String guestId = "guest-uuid-bob";
+
+            Map<String, Object> attrs = new HashMap<>();
+            attrs.put("nickname", nickname);
+            attrs.put("guestId", guestId);
+
+            when(reconnectRegistry.findRoom(nickname)).thenReturn(Optional.of(roomId));
+            when(reconnectRegistry.verifyGuestId(nickname, guestId)).thenReturn(true);
 
             PokerRoom room = new PokerRoom(roomId, "Test Room");
             room.setStatus(GameStatus.IN_PROGRESS);
@@ -332,11 +364,14 @@ class WebSocketEventListenerTest {
         void reconnect_broadcast_uses_state_captured_inside_synchronized_block() {
             String roomId = "room-race";
             String nickname = "charlie";
+            String guestId = "guest-uuid-charlie";
 
             Map<String, Object> attrs = new HashMap<>();
             attrs.put("nickname", nickname);
+            attrs.put("guestId", guestId);
 
             when(reconnectRegistry.findRoom(nickname)).thenReturn(Optional.of(roomId));
+            when(reconnectRegistry.verifyGuestId(nickname, guestId)).thenReturn(true);
 
             PokerRoom room = new PokerRoom(roomId, "Test Room");
             room.setStatus(GameStatus.IN_PROGRESS);
@@ -364,11 +399,14 @@ class WebSocketEventListenerTest {
         void reconnect_roomNotFound_noRestore() {
             String roomId = "ghost-room";
             String nickname = "eve";
+            String guestId = "guest-uuid-eve";
 
             Map<String, Object> attrs = new HashMap<>();
             attrs.put("nickname", nickname);
+            attrs.put("guestId", guestId);
 
             when(reconnectRegistry.findRoom(nickname)).thenReturn(Optional.of(roomId));
+            when(reconnectRegistry.verifyGuestId(nickname, guestId)).thenReturn(true);
             when(pokerRoomRepository.findById(roomId)).thenReturn(Optional.empty());
 
             SessionConnectedEvent event = buildConnectEvent(attrs);

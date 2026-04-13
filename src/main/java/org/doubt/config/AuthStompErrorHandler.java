@@ -25,12 +25,15 @@ public class AuthStompErrorHandler extends StompSubProtocolErrorHandler {
         Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
 
         if (cause instanceof GameException gameException) {
-            log.warn("STOMP auth error: {}", gameException.getErrorCode().name());
-            return errorFrame(gameException.getMessage());
+            String errorCode = gameException.getErrorCode().name();
+            log.warn("STOMP auth error: {}", errorCode);
+            // 내부 예외 메시지 대신 ErrorCode 이름만 전송 — 내부 정보 노출 방지 (R2-W7)
+            return errorFrame(errorCode);
         }
 
         log.error("STOMP unexpected error", ex);
-        return super.handleClientMessageProcessingError(clientMessage, ex);
+        // 예상치 못한 예외는 generic 메시지 반환 — 스택 트레이스 등 내부 정보 노출 방지 (R2-W7)
+        return errorFrame("INTERNAL_SERVER_ERROR");
     }
 
     private Message<byte[]> errorFrame(String message) {

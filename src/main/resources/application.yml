@@ -7,3 +7,6 @@ app:
     # 반드시 환경 변수 APP_AUTH_SECRET 을 주입해야 한다. 미설정 시 서버 기동 실패.
     secret: ${APP_AUTH_SECRET}
     expiry-hours: 1
+  cors:
+    # 로컬 개발용 추가 허용 출처. 프로덕션 배포 시 application-prod.yml 에서 빈 값으로 재정의한다.
+    extra-origins: http://localhost:5173

@@ -4,6 +4,8 @@ import org.doubt.auth.GuestTokenService;
 import org.doubt.doubtpoker.DoubtPokerApplication;
 import org.doubt.constant.ErrorCode;
 import org.doubt.dto.GameMessage;
+import org.doubt.dto.PokerRoom;
+import org.doubt.repository.PokerRoomRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,6 +47,9 @@ class GameFlowIntegrationTest {
     @Autowired
     private GuestTokenService guestTokenService;
 
+    @Autowired
+    private PokerRoomRepository pokerRoomRepository;
+
     private WebSocketStompClient stompClient;
     private String wsUrl;
 
@@ -83,6 +88,7 @@ class GameFlowIntegrationTest {
         void join_room_broadcasts_to_subscribers() throws Exception {
             String roomId = "flow-room-1";
             String nickname = "플로우테스트유저";
+            pokerRoomRepository.save(new PokerRoom(roomId, "플로우테스트방"));
 
             StompSession session = connectWithNickname(nickname);
 
@@ -119,6 +125,7 @@ class GameFlowIntegrationTest {
         @DisplayName("두 클라이언트가 같은 방에 입장하면 서로의 입장 메시지를 수신한다")
         void two_clients_receive_each_others_join_messages() throws Exception {
             String roomId = "flow-room-2";
+            pokerRoomRepository.save(new PokerRoom(roomId, "멀티테스트방"));
 
             StompSession session1 = connectWithNickname("멀티유저A");
             StompSession session2 = connectWithNickname("멀티유저B");
@@ -155,6 +162,7 @@ class GameFlowIntegrationTest {
             String joinedRoom = "flow-room-3";
             String otherRoom  = "flow-room-99";
             String nickname   = "오류테스트유저";
+            pokerRoomRepository.save(new PokerRoom(joinedRoom, "오류테스트방"));
 
             StompSession session = connectWithNickname(nickname);
 
@@ -180,6 +188,7 @@ class GameFlowIntegrationTest {
         void unknown_action_type_receives_invalid_turn_phase_error() throws Exception {
             String roomId   = "flow-room-4";
             String nickname = "액션오류유저";
+            pokerRoomRepository.save(new PokerRoom(roomId, "액션오류테스트방"));
 
             StompSession session = connectWithNickname(nickname);
 

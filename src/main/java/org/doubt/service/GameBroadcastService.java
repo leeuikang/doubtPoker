@@ -57,7 +57,8 @@ public class GameBroadcastService {
      */
     private RoundState maskHandsExcept(RoundState state, String viewerNickname) {
         RoundState masked = new RoundState();
-        masked.setStockPile(state.getStockPile());
+        masked.setStockPile(null); // 드로우 예측 방지: 카드 값은 숨기고 크기만 전달
+        masked.setStockPileSize(state.getStockPile() != null ? state.getStockPile().size() : 0);
         masked.setDiscardPile(state.getDiscardPile());
         masked.setTableMelds(maskMeldsFor(state.getTableMelds(), viewerNickname));
         masked.setTurnOrder(state.getTurnOrder());

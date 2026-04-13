@@ -14,9 +14,10 @@ import org.doubt.dto.TournamentState;
 import org.doubt.handler.SessionManager;
 import org.doubt.repository.PokerRoomRepository;
 import org.doubt.service.GameBroadcastService;
+import org.doubt.service.TournamentService;
 import org.springframework.context.event.EventListener;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
-import org.springframework.stereotype.Controller;
+import org.springframework.stereotype.Component;
 import org.springframework.web.socket.messaging.SessionConnectedEvent;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
@@ -44,7 +45,7 @@ import java.util.Optional;
  * </ul>
  */
 @Slf4j
-@Controller
+@Component
 @RequiredArgsConstructor
 public class WebSocketEventListener {
 
@@ -53,6 +54,7 @@ public class WebSocketEventListener {
     private final GameBroadcastService gameBroadcastService;
     private final PokerRoomRepository pokerRoomRepository;
     private final ReconnectRegistry reconnectRegistry;
+    private final TournamentService tournamentService;
 
     // ─────────────────────────────────────────────────────────
     // 재접속 복원
@@ -70,6 +72,14 @@ public class WebSocketEventListener {
         Optional<String> roomIdOpt = reconnectRegistry.findRoom(nickname);
         if (roomIdOpt.isEmpty()) {
             log.info("[WS] New connection: nickname={}", nickname);
+            return;
+        }
+
+        // guestId 재검증: 닉네임 선점 후 타 클라이언트가 동일 닉네임으로 재접속 시도 차단 (R2-W6)
+        String guestId = (String) attrs.get("guestId");
+        if (!reconnectRegistry.verifyGuestId(nickname, guestId)) {
+            log.warn("[WS] Reconnect rejected — guestId mismatch: nickname={}", nickname);
+            reconnectRegistry.clear(nickname);
             return;
         }
 
@@ -120,12 +130,13 @@ public class WebSocketEventListener {
 
         String roomId = roomIdObj.toString();
         String userName = userNameObj.toString();
+        String guestId = (String) attributes.get("guestId");
 
         log.info("[WS] User disconnected: nickname={}, roomId={}", userName, roomId);
 
         PokerRoom room = pokerRoomRepository.findById(roomId).orElse(null);
         if (room != null && room.getStatus() == GameStatus.IN_PROGRESS) {
-            handleInGameDisconnect(room, roomId, userName);
+            handleInGameDisconnect(room, roomId, userName, guestId);
         } else {
             // 게임 미진행 중: 즉시 제거
             sessionManager.removeUserFromRoom(roomId, userName);
@@ -146,7 +157,7 @@ public class WebSocketEventListener {
      *   <li>임계치 미만이면 DISCONNECTED 마킹 후 ReconnectRegistry에 등록한다.</li>
      * </ul>
      */
-    private void handleInGameDisconnect(PokerRoom room, String roomId, String userName) {
+    private void handleInGameDisconnect(PokerRoom room, String roomId, String userName, String guestId) {
         GameMessage msgToSend;
         synchronized (room) {
             RoundState state = room.getRoundState();
@@ -170,8 +181,8 @@ public class WebSocketEventListener {
 
                 // 토너먼트 탈락 목록에도 즉시 반영
                 TournamentState tournament = room.getTournamentState();
-                if (tournament != null && !tournament.getEliminatedPlayers().contains(userName)) {
-                    tournament.getEliminatedPlayers().add(userName);
+                if (tournament != null) {
+                    tournamentService.eliminate(tournament, userName);
                 }
 
                 sessionManager.removeUserFromRoom(roomId, userName);
@@ -184,7 +195,7 @@ public class WebSocketEventListener {
                 prs.setStatus(PlayerStatus.DISCONNECTED);
                 sessionManager.removeUserFromRoom(roomId, userName);
                 nicknameRegistry.release(userName);
-                reconnectRegistry.track(userName, roomId);
+                reconnectRegistry.track(userName, roomId, guestId);
                 log.info("[WS] Player marked DISCONNECTED, awaiting reconnect: nickname={}, disconnectCount={}", userName, prs.getDisconnectCount());
                 msgToSend = new GameMessage("USER_DISCONNECTED", roomId, userName, null);
             }

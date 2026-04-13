@@ -274,6 +274,7 @@ public class RoundService {
         // 마지막 1장 버림 → 고잉아웃
         if (playerState.getHand().isEmpty()) {
             playerState.setHasMeldedThisTurn(false);
+            state.setLastDoubtableMeldId(null);
             state.setEndCondition(RoundEndCondition.GOING_OUT);
             log.info("[Round] GOING_OUT via discard playerId={}", playerId);
             return state;
@@ -369,12 +370,24 @@ public class RoundService {
         state.setLastDoubtableMeldId(null); // 지목 소진
 
         if (meld.isBluff()) {
-            // 성공: 소유자 카드 회수 + 확장자 카드 회수 + 소유자 1장 드로우
-            state.getPlayerStates().get(meld.getOwnerId()).getHand().addAll(meld.getActualCards());
-            meld.getExtensions().forEach((extenderId, cards) ->
-                    state.getPlayerStates().get(extenderId).getHand().addAll(cards));
+            // 성공: 소유자 카드 회수 + 파산 체크
+            PlayerRoundState ownerState = state.getPlayerStates().get(meld.getOwnerId());
+            ownerState.getHand().addAll(meld.getActualCards());
+            checkCardRecoveryBankruptcy(state, meld.getOwnerId(), ownerState);
+
+            // 확장자 카드 회수 + 파산 체크
+            meld.getExtensions().forEach((extenderId, cards) -> {
+                PlayerRoundState extenderState = state.getPlayerStates().get(extenderId);
+                extenderState.getHand().addAll(cards);
+                checkCardRecoveryBankruptcy(state, extenderId, extenderState);
+            });
+
             state.getTableMelds().remove(meld);
-            drawOneFromStock(state, meld.getOwnerId());
+
+            // 소유자가 이미 파산하지 않은 경우에만 패널티 드로우
+            if (ownerState.getStatus() != PlayerStatus.ELIMINATED) {
+                drawOneFromStock(state, meld.getOwnerId());
+            }
             log.info("[Round] DOUBT success meldId={} owner={}", meld.getId(), meld.getOwnerId());
         } else {
             // 실패: 지목자 1장 드로우
@@ -582,6 +595,20 @@ public class RoundService {
     /** 파산 여부 체크 (핸드 10장 이상이면 즉시 탈락) */
     private boolean isBankrupt(RoundState state, String playerId) {
         return state.getPlayerStates().get(playerId).getHand().size() >= GameConstants.BANKRUPTCY_HAND_SIZE;
+    }
+
+    /**
+     * 카드 회수 직후 파산 기준을 충족하면 즉시 탈락 처리한다.
+     * 이미 ELIMINATED 상태인 경우에는 중복 처리하지 않는다.
+     */
+    private void checkCardRecoveryBankruptcy(RoundState state, String playerId, PlayerRoundState playerState) {
+        if (playerState.getStatus() == PlayerStatus.ELIMINATED) return;
+        if (isBankrupt(state, playerId)) {
+            playerState.setHasBankrupted(true);
+            playerState.setStatus(PlayerStatus.ELIMINATED);
+            log.info("[Round] BANKRUPTCY (card recovery) playerId={}", playerId);
+            checkBankruptcyEndCondition(state);
+        }
     }
 
     /** 플레이어 손패에 required 카드가 모두 있는지 확인 (없으면 INVALID_CARD) */

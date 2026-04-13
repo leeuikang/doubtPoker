@@ -1,0 +1,4 @@
+app:
+  cors:
+    # 프로덕션: 개발 출처 제외, 프로덕션 도메인만 허용
+    extra-origins:

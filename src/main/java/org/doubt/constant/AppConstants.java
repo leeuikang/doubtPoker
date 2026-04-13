@@ -15,11 +15,7 @@ public final class AppConstants {
     /** 로컬 개발 서버 (Vite 기본 포트) */
     public static final String DEV_ORIGIN = "http://localhost:5173";
 
-    /**
-     * WebSocket CORS 허용 출처 목록.
-     * 배포 도메인 변경 시 이 배열만 수정하면 전체 적용된다.
-     */
-    public static final String[] ALLOWED_ORIGINS = { PROD_ORIGIN, DEV_ORIGIN };
+    // 허용 출처 목록은 WebSocketConfig 에서 app.cors.extra-origins 프로퍼티로 동적 구성 (R2-I2)
 
     // ----------------------------------------------------------------
     // CSRF

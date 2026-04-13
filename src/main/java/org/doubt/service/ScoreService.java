@@ -118,9 +118,6 @@ public class ScoreService {
         scoreDelta.forEach((playerId, delta) -> {
             int newScore = tournament.getScores().getOrDefault(playerId, 0) + delta;
             tournament.getScores().put(playerId, newScore);
-            if (newScore <= 0 && !tournament.getEliminatedPlayers().contains(playerId)) {
-                tournament.getEliminatedPlayers().add(playerId);
-            }
         });
         tournament.getRoundHistory().add(new HashMap<>(scoreDelta));
         return tournament;

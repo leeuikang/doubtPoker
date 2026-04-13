@@ -68,6 +68,9 @@ public class GameController {
         String nickname = (String) attrs.get("nickname");
         if (nickname == null) throw new GameException(ErrorCode.UNAUTHORIZED);
 
+        // 방 존재 여부 먼저 검증 — 없으면 SessionManager 상태 오염 방지 (R2-W5)
+        findRoom(message.roomId());
+
         attrs.put("roomId", message.roomId());
         attrs.put("userName", nickname);
 

@@ -2,6 +2,7 @@ package org.doubt.config;
 
 import lombok.RequiredArgsConstructor;
 import org.doubt.constant.AppConstants;
+import org.springframework.beans.factory.annotation.Value;
 import org.doubt.interceptor.ChatRateLimitInterceptor;
 import org.doubt.interceptor.CsrfHandshakeInterceptor;
 import org.doubt.interceptor.StompAuthInterceptor;
@@ -19,6 +20,10 @@ import org.springframework.web.socket.messaging.StompSubProtocolErrorHandler;
 @RequiredArgsConstructor
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
+    /** 개발 환경 추가 허용 출처 (프로덕션에서는 빈 문자열) — application[-prod].yml 에서 제어 (R2-I2) */
+    @Value("${app.cors.extra-origins:}")
+    private String corsExtraOrigins;
+
     private final StompAuthInterceptor stompAuthInterceptor;
     private final StompLogInterceptor stompLogInterceptor;
     private final StompOutboundLogInterceptor stompOutboundLogInterceptor;
@@ -35,9 +40,20 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry){
         registry.addEndpoint("/websocket")
-                .setAllowedOrigins(AppConstants.ALLOWED_ORIGINS)
+                .setAllowedOrigins(buildAllowedOrigins())
                 .addInterceptors(csrfHandshakeInterceptor)
                 .withSockJS();
+    }
+
+    /**
+     * 허용 출처 배열을 구성한다.
+     * 프로덕션({@code app.cors.extra-origins} 빈 값)이면 {@link AppConstants#PROD_ORIGIN}만 포함한다.
+     */
+    private String[] buildAllowedOrigins() {
+        if (corsExtraOrigins == null || corsExtraOrigins.isBlank()) {
+            return new String[]{ AppConstants.PROD_ORIGIN };
+        }
+        return new String[]{ AppConstants.PROD_ORIGIN, corsExtraOrigins };
     }
 
     @Override

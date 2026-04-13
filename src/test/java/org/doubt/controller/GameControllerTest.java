@@ -52,7 +52,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * GameController unit tests
- * - processJoinRoom(): session nickname auth (H-2)
+ * - processJoinRoom(): session nickname auth (H-2), room existence validation (R2-W5)
  * - processAction()  : turn action routing, error guards, round-end broadcast
  */
 @ExtendWith(MockitoExtension.class)
@@ -149,6 +149,55 @@ class GameControllerTest {
             return accessor;
         }
 
+        private SimpMessageHeaderAccessor headerAccessorWithNicknameAndRoom(String nickname, String roomId) {
+            SimpMessageHeaderAccessor accessor = mock(SimpMessageHeaderAccessor.class);
+            Map<String, Object> attrs = new HashMap<>();
+            if (nickname != null) attrs.put("nickname", nickname);
+            if (roomId != null) attrs.put("roomId", roomId);
+            when(accessor.getSessionAttributes()).thenReturn(attrs);
+            return accessor;
+        }
+
+        @Test
+        @DisplayName("방이 존재하지 않으면 ROOM_NOT_FOUND 예외가 발생하고 addUserToRoom 은 호출되지 않는다")
+        void room_not_found_throws_and_addUserToRoom_never_called() {
+            String roomId = "non-existent-room";
+            String nickname = "홍길동";
+            GameMessage message = new GameMessage("JOIN", roomId, nickname, null);
+            SimpMessageHeaderAccessor accessor = headerAccessorWithNickname(nickname);
+
+            when(pokerRoomRepository.findById(roomId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> gameController.processJoinRoom(message, accessor))
+                    .isInstanceOf(GameException.class)
+                    .satisfies(ex -> assertThat(((GameException) ex).getErrorCode())
+                            .isEqualTo(ErrorCode.ROOM_NOT_FOUND));
+
+            verify(sessionManager, never()).addUserToRoom(any(), any());
+        }
+
+        @Test
+        @DisplayName("방이 존재하면 세션 속성이 설정되고 addUserToRoom 이 정상 호출된다")
+        void room_exists_sets_session_attrs_and_calls_addUserToRoom() {
+            String roomId = "room-ok";
+            String nickname = "검증된닉네임";
+            GameMessage message = new GameMessage("JOIN", roomId, "imposter", null);
+
+            Map<String, Object> attrs = new HashMap<>();
+            attrs.put("nickname", nickname);
+            SimpMessageHeaderAccessor accessor = mock(SimpMessageHeaderAccessor.class);
+            when(accessor.getSessionAttributes()).thenReturn(attrs);
+
+            PokerRoom room = new PokerRoom(roomId, "Test Room");
+            when(pokerRoomRepository.findById(roomId)).thenReturn(Optional.of(room));
+
+            gameController.processJoinRoom(message, accessor);
+
+            assertThat(attrs.get("roomId")).isEqualTo(roomId);
+            assertThat(attrs.get("userName")).isEqualTo(nickname);
+            verify(sessionManager, times(1)).addUserToRoom(roomId, nickname);
+        }
+
         @Test
         @DisplayName("Nickname present — sessionManager.addUserToRoom called with session nickname, not message sender")
         void session_nickname_is_used_for_addUserToRoom_not_message_sender() {
@@ -157,6 +206,9 @@ class GameControllerTest {
             String roomId = "room-1";
             GameMessage message = new GameMessage("JOIN", roomId, messageSender, null);
             SimpMessageHeaderAccessor accessor = headerAccessorWithNickname(sessionNickname);
+
+            PokerRoom room = new PokerRoom(roomId, "Test Room");
+            when(pokerRoomRepository.findById(roomId)).thenReturn(Optional.of(room));
 
             gameController.processJoinRoom(message, accessor);
 
@@ -172,6 +224,9 @@ class GameControllerTest {
             String roomId = "room-1";
             GameMessage message = new GameMessage("JOIN", roomId, messageSender, null);
             SimpMessageHeaderAccessor accessor = headerAccessorWithNickname(sessionNickname);
+
+            PokerRoom room = new PokerRoom(roomId, "Test Room");
+            when(pokerRoomRepository.findById(roomId)).thenReturn(Optional.of(room));
 
             ArgumentCaptor<GameMessage> captor = ArgumentCaptor.forClass(GameMessage.class);
 
@@ -209,6 +264,9 @@ class GameControllerTest {
             attrs.put("nickname", sessionNickname);
             SimpMessageHeaderAccessor accessor = mock(SimpMessageHeaderAccessor.class);
             when(accessor.getSessionAttributes()).thenReturn(attrs);
+
+            PokerRoom room = new PokerRoom(roomId, "Test Room");
+            when(pokerRoomRepository.findById(roomId)).thenReturn(Optional.of(room));
 
             gameController.processJoinRoom(message, accessor);
 

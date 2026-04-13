@@ -210,4 +210,99 @@ class StompAuthInterceptorTest {
             verify(guestTokenService, never()).verify(any());
         }
     }
+
+    // ----------------------------------------------------------------
+    // R2-I1: CSRF 실패 시 닉네임 레지스트리 누수 방지 (보상 처리)
+    // ----------------------------------------------------------------
+
+    @Nested
+    @DisplayName("R2-I1 — CSRF 실패 시 NicknameRegistry 누수 방지")
+    class CsrfFailureNicknameRelease {
+
+        @Test
+        @DisplayName("CSRF guestId 불일치 시 UNAUTHORIZED가 발생하고 nickname이 레지스트리에서 해제된다")
+        void csrf_mismatch_throws_unauthorized_and_releases_nickname() {
+            String token = "valid.token";
+            GuestClaims claims = new GuestClaims("auth-guest-id", "테스터");
+            when(guestTokenService.verify(token)).thenReturn(claims);
+            when(nicknameRegistry.register("테스터")).thenReturn(true);
+
+            // 핸드셰이크 단계에서 저장된 csrfGuestId가 토큰의 guestId와 다름
+            Map<String, Object> sessionAttrs = new HashMap<>();
+            sessionAttrs.put("csrfGuestId", "different-guest-id");
+            Message<byte[]> message = buildConnectMessage("Bearer " + token, sessionAttrs);
+
+            assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                    .isInstanceOf(GameException.class)
+                    .satisfies(ex -> assertThat(((GameException) ex).getErrorCode())
+                            .isEqualTo(ErrorCode.UNAUTHORIZED));
+
+            // 닉네임이 등록된 뒤 예외 발생으로 반드시 해제되어야 한다
+            verify(nicknameRegistry, times(1)).register("테스터");
+            verify(nicknameRegistry, times(1)).release("테스터");
+        }
+
+        @Test
+        @DisplayName("CSRF csrfGuestId 속성이 null이면 UNAUTHORIZED가 발생하고 nickname이 해제된다")
+        void csrf_guestid_null_throws_unauthorized_and_releases_nickname() {
+            String token = "valid.token";
+            GuestClaims claims = new GuestClaims("auth-guest-id", "테스터2");
+            when(guestTokenService.verify(token)).thenReturn(claims);
+            when(nicknameRegistry.register("테스터2")).thenReturn(true);
+
+            // csrfGuestId 키 자체가 없는 세션 속성
+            Map<String, Object> sessionAttrs = new HashMap<>();
+            Message<byte[]> message = buildConnectMessage("Bearer " + token, sessionAttrs);
+
+            assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                    .isInstanceOf(GameException.class)
+                    .satisfies(ex -> assertThat(((GameException) ex).getErrorCode())
+                            .isEqualTo(ErrorCode.UNAUTHORIZED));
+
+            verify(nicknameRegistry, times(1)).register("테스터2");
+            verify(nicknameRegistry, times(1)).release("테스터2");
+        }
+
+        @Test
+        @DisplayName("CSRF 일치 시 nickname이 레지스트리에 등록된 채로 유지되고 release는 호출되지 않는다")
+        void csrf_match_nickname_remains_registered() {
+            String token = "valid.token";
+            GuestClaims claims = new GuestClaims("correct-guest-id", "정상유저");
+            when(guestTokenService.verify(token)).thenReturn(claims);
+            when(nicknameRegistry.register("정상유저")).thenReturn(true);
+
+            Map<String, Object> sessionAttrs = new HashMap<>();
+            sessionAttrs.put("csrfGuestId", "correct-guest-id");
+            Message<byte[]> message = buildConnectMessage("Bearer " + token, sessionAttrs);
+
+            Message<?> result = interceptor.preSend(message, messageChannel);
+
+            assertThat(result).isNotNull();
+            verify(nicknameRegistry, times(1)).register("정상유저");
+            // release는 호출되어서는 안 된다
+            verify(nicknameRegistry, never()).release(any());
+        }
+
+        @Test
+        @DisplayName("sessionAttributes가 null(NPE)이면 nickname이 레지스트리에서 해제된다")
+        void session_attributes_null_npe_releases_nickname() {
+            String token = "valid.token";
+            GuestClaims claims = new GuestClaims("some-guest-id", "NPE유저");
+            when(guestTokenService.verify(token)).thenReturn(claims);
+            when(nicknameRegistry.register("NPE유저")).thenReturn(true);
+
+            // sessionAttributes를 null로 설정 → Objects.requireNonNull이 NullPointerException 발생
+            StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
+            accessor.setSessionAttributes(null);
+            accessor.addNativeHeader("Authorization", "Bearer " + token);
+            accessor.setLeaveMutable(true);
+            Message<byte[]> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+            assertThatThrownBy(() -> interceptor.preSend(message, messageChannel))
+                    .isInstanceOf(RuntimeException.class);
+
+            verify(nicknameRegistry, times(1)).register("NPE유저");
+            verify(nicknameRegistry, times(1)).release("NPE유저");
+        }
+    }
 }

@@ -76,6 +76,13 @@ public class TournamentService {
     public TournamentState applyRoundResult(TournamentState tournament, Map<String, Integer> scoreDelta, List<String> winnerIds) {
         scoreService.applyScores(tournament, scoreDelta);
 
+        // 점수 0 이하 탈락 처리 (ScoreService 에서 위임)
+        tournament.getScores().forEach((playerId, score) -> {
+            if (score <= 0) {
+                eliminate(tournament, playerId);
+            }
+        });
+
         // 다음 라운드 선 플레이어 결정: winnerIds 첫 번째 플레이어 (ruleBook §4)
         if (!winnerIds.isEmpty()) {
             tournament.setLastRoundWinnerId(winnerIds.get(0));
@@ -86,6 +93,16 @@ public class TournamentService {
         log.info("[Tournament] round applied → currentRound={} eliminatedPlayers={}",
                 tournament.getCurrentRound(), tournament.getEliminatedPlayers());
         return tournament;
+    }
+
+    /**
+     * 플레이어를 토너먼트에서 탈락시킨다.
+     * 이미 탈락한 경우 중복 처리하지 않는다.
+     */
+    public void eliminate(TournamentState tournament, String playerId) {
+        if (tournament.getEliminatedPlayers().add(playerId)) {
+            log.info("[Tournament] player eliminated: playerId={}", playerId);
+        }
     }
 
     // ─────────────────────────────────────────────────────────

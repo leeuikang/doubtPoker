@@ -19,6 +19,7 @@ import java.util.Map;
 public class RoundState {
 
     private List<Card> stockPile;
+    private int stockPileSize; // 클라이언트 전송용 크기 (마스킹 시 stockPile 대신 사용)
     private List<Card> discardPile;
     private List<Meld> tableMelds;
     private Map<String, PlayerRoundState> playerStates; // playerId → 상태

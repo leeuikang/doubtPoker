@@ -410,23 +410,23 @@ class ScoreServiceTest {
         }
 
         @Test
-        @DisplayName("점수가 0 이하가 되면 eliminatedPlayers에 추가된다")
-        void player_with_score_zero_or_below_is_eliminated() {
+        @DisplayName("점수가 0 이하가 되어도 applyScores 는 eliminatedPlayers 를 변경하지 않는다 — 탈락 처리는 TournamentService.applyRoundResult 의 책임")
+        void applyScores_does_not_eliminate_players_on_zero_score() {
             TournamentState tournament = newTournament("room1",
                     Map.of("p1", 100, "p2", 5));
 
             Map<String, Integer> delta = Map.of("p1", 5, "p2", -5);
             scoreService.applyScores(tournament, delta);
 
-            assertFalse(tournament.getEliminatedPlayers().contains("p1"),
-                    "p1은 탈락하지 않아야 한다");
-            assertTrue(tournament.getEliminatedPlayers().contains("p2"),
-                    "p2는 점수가 0이므로 탈락해야 한다");
+            assertEquals(105, tournament.getScores().get("p1"));
+            assertEquals(0, tournament.getScores().get("p2"));
+            assertTrue(tournament.getEliminatedPlayers().isEmpty(),
+                    "applyScores 는 eliminatedPlayers 를 수정하지 않아야 한다");
         }
 
         @Test
-        @DisplayName("점수가 음수가 되면 eliminatedPlayers에 추가된다")
-        void player_with_negative_score_is_eliminated() {
+        @DisplayName("점수가 음수가 되어도 applyScores 는 eliminatedPlayers 를 변경하지 않는다 — 탈락 처리는 TournamentService.applyRoundResult 의 책임")
+        void applyScores_does_not_eliminate_players_on_negative_score() {
             TournamentState tournament = newTournament("room1",
                     Map.of("p1", 3));
 
@@ -434,7 +434,8 @@ class ScoreServiceTest {
             scoreService.applyScores(tournament, delta);
 
             assertEquals(-7, tournament.getScores().get("p1"));
-            assertTrue(tournament.getEliminatedPlayers().contains("p1"));
+            assertTrue(tournament.getEliminatedPlayers().isEmpty(),
+                    "applyScores 는 eliminatedPlayers 를 수정하지 않아야 한다");
         }
 
         @Test
