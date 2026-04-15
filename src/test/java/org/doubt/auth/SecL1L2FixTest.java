@@ -111,7 +111,7 @@ class SecL1L2FixTest {
         void tampered_csrf_signature_fails() {
             String authToken = service.issue("Bob");
             GuestClaims claims = service.verify(authToken);
-            String csrfToken = service.issueCsrfToken(claims.guestId());
+            String csrfToken = service.issueCsrfToken(claims.guestId(), claims.expiresAt());
 
             String tampered = csrfToken.substring(0, csrfToken.length() - 1) + (csrfToken.endsWith("A") ? "B" : "A");
 

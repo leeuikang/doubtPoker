@@ -112,7 +112,8 @@ class GuestTokenServiceTest {
         @DisplayName("발급한 CSRF 토큰은 즉시 검증에 성공하고 올바른 guestId를 반환한다")
         void issued_csrf_token_verifies_successfully() {
             String guestId = "some-guest-uuid";
-            String csrfToken = tokenService.issueCsrfToken(guestId);
+            long expiresAt = System.currentTimeMillis() + 3600_000L;
+            String csrfToken = tokenService.issueCsrfToken(guestId, expiresAt);
 
             assertThatNoException().isThrownBy(() -> {
                 String returnedGuestId = tokenService.verifyCsrfToken(csrfToken);
@@ -135,7 +136,7 @@ class GuestTokenServiceTest {
         @Test
         @DisplayName("서명이 변조된 CSRF 토큰은 TOKEN_INVALID 예외를 던진다")
         void tampered_csrf_token_throws_token_invalid() {
-            String csrfToken = tokenService.issueCsrfToken("guest-id");
+            String csrfToken = tokenService.issueCsrfToken("guest-id", System.currentTimeMillis() + 3600_000L);
             String[] parts = csrfToken.split("\\.", 2);
             String tampered = parts[0] + ".INVALIDSIGNATURE";
 

@@ -82,7 +82,7 @@ class StompAuthInterceptorTest {
         @DisplayName("유효한 Bearer 토큰이면 메시지를 그대로 반환하고 세션에 guestId와 nickname을 저장한다")
         void valid_token_passes_through_and_stores_session_attributes() {
             String token = "valid.token";
-            GuestClaims claims = new GuestClaims("guest-uuid-123", "홍길동");
+            GuestClaims claims = new GuestClaims("guest-uuid-123", "홍길동", System.currentTimeMillis() + 3600_000L);
             when(guestTokenService.verify(token)).thenReturn(claims);
 
             // CSRF 교차 검증: 핸드셰이크 단계에서 저장된 csrfGuestId가 세션 속성에 있어야 함
@@ -147,7 +147,7 @@ class StompAuthInterceptorTest {
         @DisplayName("이미 사용 중인 닉네임이면 DUPLICATE_NICKNAME 예외가 발생한다")
         void duplicate_nickname_throws_exception() {
             String token = "valid.token";
-            GuestClaims claims = new GuestClaims("guest-uuid", "중복닉네임");
+            GuestClaims claims = new GuestClaims("guest-uuid", "중복닉네임", System.currentTimeMillis() + 3600_000L);
             when(guestTokenService.verify(token)).thenReturn(claims);
             when(nicknameRegistry.register("중복닉네임")).thenReturn(false); // 이미 사용 중
 
@@ -223,7 +223,7 @@ class StompAuthInterceptorTest {
         @DisplayName("CSRF guestId 불일치 시 UNAUTHORIZED가 발생하고 nickname이 레지스트리에서 해제된다")
         void csrf_mismatch_throws_unauthorized_and_releases_nickname() {
             String token = "valid.token";
-            GuestClaims claims = new GuestClaims("auth-guest-id", "테스터");
+            GuestClaims claims = new GuestClaims("auth-guest-id", "테스터", System.currentTimeMillis() + 3600_000L);
             when(guestTokenService.verify(token)).thenReturn(claims);
             when(nicknameRegistry.register("테스터")).thenReturn(true);
 
@@ -246,7 +246,7 @@ class StompAuthInterceptorTest {
         @DisplayName("CSRF csrfGuestId 속성이 null이면 UNAUTHORIZED가 발생하고 nickname이 해제된다")
         void csrf_guestid_null_throws_unauthorized_and_releases_nickname() {
             String token = "valid.token";
-            GuestClaims claims = new GuestClaims("auth-guest-id", "테스터2");
+            GuestClaims claims = new GuestClaims("auth-guest-id", "테스터2", System.currentTimeMillis() + 3600_000L);
             when(guestTokenService.verify(token)).thenReturn(claims);
             when(nicknameRegistry.register("테스터2")).thenReturn(true);
 
@@ -267,7 +267,7 @@ class StompAuthInterceptorTest {
         @DisplayName("CSRF 일치 시 nickname이 레지스트리에 등록된 채로 유지되고 release는 호출되지 않는다")
         void csrf_match_nickname_remains_registered() {
             String token = "valid.token";
-            GuestClaims claims = new GuestClaims("correct-guest-id", "정상유저");
+            GuestClaims claims = new GuestClaims("correct-guest-id", "정상유저", System.currentTimeMillis() + 3600_000L);
             when(guestTokenService.verify(token)).thenReturn(claims);
             when(nicknameRegistry.register("정상유저")).thenReturn(true);
 
@@ -287,7 +287,7 @@ class StompAuthInterceptorTest {
         @DisplayName("sessionAttributes가 null(NPE)이면 nickname이 레지스트리에서 해제된다")
         void session_attributes_null_npe_releases_nickname() {
             String token = "valid.token";
-            GuestClaims claims = new GuestClaims("some-guest-id", "NPE유저");
+            GuestClaims claims = new GuestClaims("some-guest-id", "NPE유저", System.currentTimeMillis() + 3600_000L);
             when(guestTokenService.verify(token)).thenReturn(claims);
             when(nicknameRegistry.register("NPE유저")).thenReturn(true);
 

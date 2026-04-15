@@ -1,5 +1,6 @@
 package org.doubt.integration;
 
+import org.doubt.auth.GuestClaims;
 import org.doubt.auth.GuestTokenService;
 import org.doubt.doubtpoker.DoubtPokerApplication;
 import org.doubt.constant.ErrorCode;
@@ -69,8 +70,8 @@ class GameFlowIntegrationTest {
 
     private StompSession connectWithNickname(String nickname) throws Exception {
         String token = guestTokenService.issue(nickname);
-        String guestId = guestTokenService.verify(token).guestId();
-        String csrfToken = guestTokenService.issueCsrfToken(guestId);
+        GuestClaims claims = guestTokenService.verify(token);
+        String csrfToken = guestTokenService.issueCsrfToken(claims.guestId(), claims.expiresAt());
         StompHeaders headers = new StompHeaders();
         headers.add("Authorization", "Bearer " + token);
         return stompClient.connectAsync(

@@ -56,7 +56,8 @@ public class GuestAuthController {
         }
         String token = authHeader.substring(7);
         GuestClaims claims = guestTokenService.verify(token); // 서명·만료·instanceId 검증
-        String csrfToken = guestTokenService.issueCsrfToken(claims.guestId());
+        // SEC-I1: auth 토큰 만료 시각을 CSRF 토큰에 연동해 auth 만료 후 CSRF 유효 상태를 방지
+        String csrfToken = guestTokenService.issueCsrfToken(claims.guestId(), claims.expiresAt());
         return new CsrfTokenResponse(csrfToken);
     }
 }

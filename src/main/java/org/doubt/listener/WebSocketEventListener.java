@@ -149,6 +149,8 @@ public class WebSocketEventListener {
 
             if (prs.getStatus() == PlayerStatus.DISCONNECTED || prs.getStatus() == PlayerStatus.AI_CONTROLLED) {
                 prs.setStatus(PlayerStatus.ACTIVE);
+                // SEC-I3: disconnect 시 release된 닉네임을 재접속 경로에서 재등록해 레지스트리 일관성 보장
+                nicknameRegistry.register(nickname);
                 log.info("[WS] Player reconnected and restored: nickname={}, roomId={}", nickname, roomId);
             }
 

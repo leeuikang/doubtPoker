@@ -65,11 +65,16 @@ public class GuestTokenService {
 
     /**
      * CSRF 토큰 발급 (포맷: {Base64Url(guestId:issuedAt:expiresAt)}.{HMAC(payload)})
-     * 무상태(stateless) — auth 토큰과 동일한 만료 시간 적용.
+     *
+     * <p>SEC-I1: auth 토큰의 {@code expiresAt}을 그대로 받아 만료 시각을 연동한다.
+     * 이전 구현은 독립적인 {@code now + expiryMillis}를 사용해 auth 만료 후에도
+     * CSRF가 유효한 상태가 될 수 있었다.</p>
+     *
+     * @param guestId   검증된 auth 클레임의 guestId
+     * @param expiresAt auth 토큰의 만료 Unix 밀리초 — CSRF도 동일 시각에 만료된다
      */
-    public String issueCsrfToken(String guestId) {
+    public String issueCsrfToken(String guestId, long expiresAt) {
         long now = System.currentTimeMillis();
-        long expiresAt = now + expiryMillis;
         String raw = guestId + ":" + now + ":" + expiresAt;
         String payloadB64 = base64Encode(raw);
         String sig = base64Encode(hmac(payloadB64));
@@ -139,7 +144,7 @@ public class GuestTokenService {
             throw new GameException(ErrorCode.TOKEN_EXPIRED);
         }
 
-        return new GuestClaims(fields[0], fields[4]);
+        return new GuestClaims(fields[0], fields[4], expiresAt);
     }
 
     /** 테스트에서 instanceId 주입 토큰 생성 시 사용 */

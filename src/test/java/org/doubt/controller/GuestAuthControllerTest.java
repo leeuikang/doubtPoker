@@ -22,7 +22,9 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -64,7 +66,7 @@ class GuestAuthControllerTest {
         @DisplayName("유효한 닉네임으로 요청하면 token, guestId, nickname을 포함한 200 응답을 반환한다")
         void valid_request_returns_token_guestId_nickname() throws Exception {
             String token = "issued-token-value";
-            GuestClaims claims = new GuestClaims("uuid-1234", "홍길동");
+            GuestClaims claims = new GuestClaims("uuid-1234", "홍길동", System.currentTimeMillis() + 3600_000L);
             when(guestTokenService.issue("홍길동")).thenReturn(token);
             when(guestTokenService.verify(token)).thenReturn(claims);
 
@@ -81,7 +83,7 @@ class GuestAuthControllerTest {
         @DisplayName("응답 JSON에 csrfToken 필드가 존재하지 않는다 (채널 분리 R2-I3)")
         void response_does_not_contain_csrf_token_field() throws Exception {
             String token = "some-token";
-            GuestClaims claims = new GuestClaims("gid-abc", "테스터");
+            GuestClaims claims = new GuestClaims("gid-abc", "테스터", System.currentTimeMillis() + 3600_000L);
             when(guestTokenService.issue("테스터")).thenReturn(token);
             when(guestTokenService.verify(token)).thenReturn(claims);
 
@@ -111,7 +113,7 @@ class GuestAuthControllerTest {
         @DisplayName("issue()와 verify()가 각각 정확히 한 번 호출된다")
         void service_methods_called_once_each() throws Exception {
             String token = "tok";
-            GuestClaims claims = new GuestClaims("gid", "닉네임");
+            GuestClaims claims = new GuestClaims("gid", "닉네임", System.currentTimeMillis() + 3600_000L);
             when(guestTokenService.issue("닉네임")).thenReturn(token);
             when(guestTokenService.verify(token)).thenReturn(claims);
 
@@ -134,42 +136,44 @@ class GuestAuthControllerTest {
     class IssueCsrfToken {
 
         @Test
-        @DisplayName("유효한 guestId를 전달하면 csrfToken을 포함한 200 응답을 반환한다")
-        void valid_guest_id_returns_csrf_token() throws Exception {
-            String csrfToken = "csrf-token-value";
-            when(guestTokenService.issueCsrfToken("valid-guest-id")).thenReturn(csrfToken);
+        @DisplayName("유효한 Bearer 토큰으로 요청하면 csrfToken을 포함한 200 응답을 반환한다")
+        void valid_bearer_token_returns_csrf_token() throws Exception {
+            long futureExpiry = System.currentTimeMillis() + 3600_000L;
+            GuestClaims claims = new GuestClaims("valid-guest-id", "tester", futureExpiry);
+            when(guestTokenService.verify("my-auth-token")).thenReturn(claims);
+            when(guestTokenService.issueCsrfToken(eq("valid-guest-id"), anyLong())).thenReturn("csrf-token-value");
 
             mockMvc.perform(get("/auth/csrf")
-                            .param("guestId", "valid-guest-id"))
+                            .header("Authorization", "Bearer my-auth-token"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.csrfToken").value("csrf-token-value"));
         }
 
         @Test
-        @DisplayName("guestId가 빈 문자열이면 GameException(UNAUTHORIZED)이 발생한다")
-        void blank_guest_id_throws_unauthorized() {
+        @DisplayName("Authorization 헤더가 빈 문자열이면 GameException(UNAUTHORIZED)이 발생한다")
+        void blank_auth_header_throws_unauthorized() {
             assertThatThrownBy(() -> controller.issueCsrfToken(""))
                     .isInstanceOf(GameException.class)
                     .satisfies(ex -> assertThat(((GameException) ex).getErrorCode())
                             .isEqualTo(ErrorCode.UNAUTHORIZED));
 
-            verify(guestTokenService, never()).issueCsrfToken(anyString());
+            verify(guestTokenService, never()).issueCsrfToken(anyString(), anyLong());
         }
 
         @Test
-        @DisplayName("guestId가 공백 문자열이면 GameException(UNAUTHORIZED)이 발생한다")
-        void whitespace_guest_id_throws_unauthorized() {
-            assertThatThrownBy(() -> controller.issueCsrfToken("   "))
+        @DisplayName("Bearer 접두사 없는 헤더는 GameException(UNAUTHORIZED)이 발생한다")
+        void no_bearer_prefix_throws_unauthorized() {
+            assertThatThrownBy(() -> controller.issueCsrfToken("not-a-bearer-token"))
                     .isInstanceOf(GameException.class)
                     .satisfies(ex -> assertThat(((GameException) ex).getErrorCode())
                             .isEqualTo(ErrorCode.UNAUTHORIZED));
 
-            verify(guestTokenService, never()).issueCsrfToken(anyString());
+            verify(guestTokenService, never()).issueCsrfToken(anyString(), anyLong());
         }
 
         @Test
-        @DisplayName("guestId 파라미터가 없으면 400(Bad Request)을 반환한다")
-        void missing_guest_id_param_returns_400() throws Exception {
+        @DisplayName("Authorization 헤더가 없으면 400(Bad Request)을 반환한다")
+        void missing_auth_header_returns_400() throws Exception {
             mockMvc.perform(get("/auth/csrf"))
                     .andExpect(status().isBadRequest());
         }
@@ -177,13 +181,16 @@ class GuestAuthControllerTest {
         @Test
         @DisplayName("issueCsrfToken()이 정확히 한 번 호출된다")
         void service_method_called_once() throws Exception {
-            when(guestTokenService.issueCsrfToken("gid-xyz")).thenReturn("csrf-tok");
+            long futureExpiry = System.currentTimeMillis() + 3600_000L;
+            GuestClaims claims = new GuestClaims("gid-xyz", "tester", futureExpiry);
+            when(guestTokenService.verify("my-token")).thenReturn(claims);
+            when(guestTokenService.issueCsrfToken(eq("gid-xyz"), anyLong())).thenReturn("csrf-tok");
 
             mockMvc.perform(get("/auth/csrf")
-                            .param("guestId", "gid-xyz"))
+                            .header("Authorization", "Bearer my-token"))
                     .andExpect(status().isOk());
 
-            verify(guestTokenService, times(1)).issueCsrfToken("gid-xyz");
+            verify(guestTokenService, times(1)).issueCsrfToken(eq("gid-xyz"), anyLong());
         }
 
         @Test

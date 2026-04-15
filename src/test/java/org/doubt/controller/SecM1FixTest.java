@@ -4,7 +4,6 @@ import org.doubt.auth.GuestClaims;
 import org.doubt.auth.GuestTokenService;
 import org.doubt.constant.ErrorCode;
 import org.doubt.exception.GameException;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -15,7 +14,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -29,6 +30,8 @@ import static org.mockito.Mockito.when;
  * <p>해결 방식(SEC-H1): 엔드포인트 시그니처를 {@code @RequestParam guestId}에서
  * {@code @RequestHeader Authorization}으로 변경하여 Bearer 토큰 검증 후
  * 클레임의 guestId를 사용한다. 외부에서 직접 guestId를 지정하는 경로 자체가 제거되었다.</p>
+ *
+ * <p>SEC-I1 수정 반영: issueCsrfToken이 expiresAt 파라미터를 받아 auth 만료 시각에 연동.</p>
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("SEC-M1 수정 검증: 임의 guestId 입력 경로 제거")
@@ -40,6 +43,8 @@ class SecM1FixTest {
     @InjectMocks
     private GuestAuthController guestAuthController;
 
+    private static final long FUTURE_EXPIRY = System.currentTimeMillis() + 3600_000L;
+
     @Nested
     @DisplayName("issueCsrfToken — 원래 공격 벡터 차단 확인")
     class IssueCsrfToken_AttackVectorBlocked {
@@ -48,9 +53,9 @@ class SecM1FixTest {
         @DisplayName("엔드포인트는 guestId 파라미터가 아닌 검증된 토큰 클레임을 사용한다")
         void issueCsrfToken_noLongerAcceptsRawGuestId_requiresValidToken() {
             // given: 유효한 Bearer 토큰 — 클레임에서 guestId를 추출한다
-            GuestClaims claims = new GuestClaims("guest-uuid", "nick");
+            GuestClaims claims = new GuestClaims("guest-uuid", "nick", FUTURE_EXPIRY);
             when(guestTokenService.verify("valid-token")).thenReturn(claims);
-            when(guestTokenService.issueCsrfToken("guest-uuid")).thenReturn("csrf-token");
+            when(guestTokenService.issueCsrfToken(eq("guest-uuid"), anyLong())).thenReturn("csrf-token");
 
             // when: Bearer 토큰으로 호출 — 외부 guestId 파라미터 없음
             var response = guestAuthController.issueCsrfToken("Bearer valid-token");
@@ -58,7 +63,7 @@ class SecM1FixTest {
             // then: 토큰이 검증되었고, 클레임의 guestId로 CSRF 토큰이 발급되었다
             assertThat(response.csrfToken()).isEqualTo("csrf-token");
             verify(guestTokenService).verify("valid-token"); // 토큰 검증이 반드시 수행되어야 한다
-            verify(guestTokenService).issueCsrfToken("guest-uuid"); // 외부 입력이 아닌 클레임의 guestId
+            verify(guestTokenService).issueCsrfToken(eq("guest-uuid"), anyLong()); // 클레임의 guestId 사용 확인
         }
 
         @Test
