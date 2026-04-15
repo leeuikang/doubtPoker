@@ -711,6 +711,7 @@ class RoundServiceTest {
                 MeldRequest request = new MeldRequest(meldCards, declared, MeldType.SOLO_SEVEN);
 
                 when(meldValidationService.validateMeld(any(), any(), any())).thenReturn(true);
+                when(meldValidationService.isBluffMeld(any(), any())).thenReturn(true); // CQ-W4
 
                 assertThatThrownBy(() -> roundService.handleMeld(state, PLAYER_ID, request))
                         .isInstanceOf(GameException.class)
@@ -733,6 +734,7 @@ class RoundServiceTest {
                 MeldRequest request = new MeldRequest(meldCards, declared, MeldType.SOLO_SEVEN);
 
                 when(meldValidationService.validateMeld(any(), any(), any())).thenReturn(true);
+                when(meldValidationService.isBluffMeld(any(), any())).thenReturn(true); // CQ-W4
 
                 RoundState result = roundService.handleMeld(state, PLAYER_ID, request);
 

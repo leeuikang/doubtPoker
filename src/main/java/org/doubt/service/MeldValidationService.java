@@ -168,6 +168,11 @@ public class MeldValidationService {
         return isConsecutiveStraight(combined);
     }
 
+    /** 실제 카드와 선언 카드 중 1장이라도 다르면 거짓말 멜드 (CQ-W4) */
+    public boolean isBluffMeld(List<Card> actualCards, List<DeclaredCard> declaredCards) {
+        return countBluffs(actualCards, declaredCards) > 0;
+    }
+
     /** actualCards와 declaredCards 간 불일치(거짓말) 장 수를 반환 */
     private long countBluffs(List<Card> actualCards, List<DeclaredCard> declaredCards) {
         long count = 0;

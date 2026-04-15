@@ -210,49 +210,59 @@ public class GameController {
         log.info("[GameController] action={} playerId={} roomId={}", action, nickname, message.roomId());
 
         if (updated.getEndCondition() != null) {
-            List<String> roundWinnerIds = roundService.determineWinners(updated);
-            Map<String, Integer> scoreDelta = roundService.resolveRound(updated, roundWinnerIds);
+            finalizeRound(room, updated, message.roomId());
+        }
+    }
 
-            boolean tournamentFinished = false;
-            List<String> tournamentWinners = List.of();
-            Map<String, Integer> finalScores = Map.of();
+    /**
+     * 라운드 종료 후처리: 점수 반영, 토너먼트 상태 동기화, 브로드캐스트 (CQ-W6)
+     *
+     * <p>GL-C2: 첫 번째 {@code synchronized} 에서 ROUND_END 로 전환한 스레드만 두 번째
+     * {@code synchronized} 에 진입하도록 상태를 재확인한다.</p>
+     */
+    private void finalizeRound(PokerRoom room, RoundState updated, String roomId) {
+        List<String> roundWinnerIds = roundService.determineWinners(updated);
+        Map<String, Integer> scoreDelta = roundService.resolveRound(updated, roundWinnerIds);
 
-            synchronized (room) {
-                // GL-C2: 첫 번째 synchronized 에서 ROUND_END 로 전환한 스레드만 진입
-                if (room.getStatus() != GameStatus.ROUND_END) return;
-                TournamentState tournament = room.getTournamentState();
-                if (tournament != null) {
-                    tournament = tournamentService.applyRoundResult(tournament, scoreDelta, roundWinnerIds);
-                    room.setTournamentState(tournament);
+        boolean tournamentFinished = false;
+        List<String> tournamentWinners = List.of();
+        Map<String, Integer> finalScores = Map.of();
 
-                    // 토너먼트 탈락자를 현재 RoundState에도 반영 (PlayerStatus 동기화)
-                    RoundState roundState = room.getRoundState();
-                    if (roundState != null) {
-                        tournament.getEliminatedPlayers().forEach(eliminatedId -> {
-                            PlayerRoundState prs = roundState.getPlayerStates().get(eliminatedId);
-                            if (prs != null && prs.getStatus() != PlayerStatus.ELIMINATED) {
-                                prs.setStatus(PlayerStatus.ELIMINATED);
-                            }
-                        });
-                    }
+        synchronized (room) {
+            // GL-C2: 첫 번째 synchronized 에서 ROUND_END 로 전환한 스레드만 진입
+            if (room.getStatus() != GameStatus.ROUND_END) return;
+            TournamentState tournament = room.getTournamentState();
+            if (tournament != null) {
+                tournament = tournamentService.applyRoundResult(tournament, scoreDelta, roundWinnerIds);
+                room.setTournamentState(tournament);
 
-                    if (tournamentService.isFinished(tournament)) {
-                        tournamentFinished = true;
-                        tournamentWinners = tournamentService.getWinners(tournament);
-                        finalScores = Map.copyOf(tournament.getScores());
-                        room.setStatus(GameStatus.TOURNAMENT_END);
-                    }
+                // 토너먼트 탈락자를 현재 RoundState에도 반영 (PlayerStatus 동기화)
+                RoundState roundState = room.getRoundState();
+                if (roundState != null) {
+                    tournament.getEliminatedPlayers().forEach(eliminatedId -> {
+                        PlayerRoundState prs = roundState.getPlayerStates().get(eliminatedId);
+                        if (prs != null && prs.getStatus() != PlayerStatus.ELIMINATED) {
+                            prs.setStatus(PlayerStatus.ELIMINATED);
+                        }
+                    });
+                }
+
+                if (tournamentService.isFinished(tournament)) {
+                    tournamentFinished = true;
+                    tournamentWinners = tournamentService.getWinners(tournament);
+                    finalScores = Map.copyOf(tournament.getScores());
+                    room.setStatus(GameStatus.TOURNAMENT_END);
                 }
             }
+        }
 
-            gameBroadcastService.broadcast(message.roomId(), new GameMessage("ROUND_END", message.roomId(), "SYSTEM", scoreDelta));
-            log.info("[GameController] ROUND_END roomId={} endCondition={}", message.roomId(), updated.getEndCondition());
+        gameBroadcastService.broadcast(roomId, new GameMessage("ROUND_END", roomId, "SYSTEM", scoreDelta));
+        log.info("[GameController] ROUND_END roomId={} endCondition={}", roomId, updated.getEndCondition());
 
-            if (tournamentFinished) {
-                gameBroadcastService.broadcast(message.roomId(), new GameMessage("TOURNAMENT_END", message.roomId(), "SYSTEM",
-                        Map.of("winners", tournamentWinners, "scores", finalScores)));
-                log.info("[GameController] TOURNAMENT_END roomId={} winners={}", message.roomId(), tournamentWinners);
-            }
+        if (tournamentFinished) {
+            gameBroadcastService.broadcast(roomId, new GameMessage("TOURNAMENT_END", roomId, "SYSTEM",
+                    Map.of("winners", tournamentWinners, "scores", finalScores)));
+            log.info("[GameController] TOURNAMENT_END roomId={} winners={}", roomId, tournamentWinners);
         }
     }
 

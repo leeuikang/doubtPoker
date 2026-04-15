@@ -16,8 +16,6 @@ public class PokerRoom {
     private String roomName;
     private List<PokerPlayer> playerList;
     private GameStatus status;
-    private int currentIndex;
-    private int totalPot;
     private LocalDateTime lastActivityTime;
     private RoundState roundState;
     private TournamentState tournamentState;
@@ -29,8 +27,6 @@ public class PokerRoom {
         this.roomName = roomName;
         this.playerList = new ArrayList<>();
         this.status = GameStatus.WAITING;
-        this.currentIndex = 0;
-        this.totalPot = 0;
         lastActivityTime = LocalDateTime.now();
     }
 

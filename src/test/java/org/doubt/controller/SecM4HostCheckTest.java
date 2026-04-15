@@ -22,7 +22,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -100,13 +99,8 @@ class SecM4HostCheckTest {
         return accessor;
     }
 
-    /**
-     * PokerPlayer 는 @Getter 만 있으므로 ReflectionTestUtils 로 name 필드를 주입한다.
-     */
     private PokerPlayer buildPlayer(String name) {
-        PokerPlayer player = new PokerPlayer();
-        ReflectionTestUtils.setField(player, "name", name);
-        return player;
+        return new PokerPlayer(null, name, 0, false);
     }
 
     // ----------------------------------------------------------------

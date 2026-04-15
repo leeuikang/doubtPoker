@@ -147,10 +147,7 @@ public class RoundService {
 
         // 파산 체크: 드로우 후 핸드 10장 이상이면 해당 플레이어 즉시 탈락 (ruleBook §8.4)
         if (isBankrupt(state, playerId)) {
-            playerState.setHasBankrupted(true);
-            playerState.setStatus(PlayerStatus.ELIMINATED);
-            log.info("[Round] BANKRUPTCY playerId={} handSize={}", playerId, playerState.getHand().size());
-            checkBankruptcyEndCondition(state);
+            applyBankruptcy(state, playerId, playerState);
         }
 
         return state;
@@ -473,10 +470,7 @@ public class RoundService {
                 playerState.getHand().add(drawn);
                 state.setTurnPhase(TurnPhase.ACTION);
                 if (isBankrupt(state, playerId)) {
-                    playerState.setHasBankrupted(true);
-                    playerState.setStatus(PlayerStatus.ELIMINATED);
-                    log.info("[Round] BANKRUPTCY (timeout draw) playerId={}", playerId);
-                    checkBankruptcyEndCondition(state);
+                    applyBankruptcy(state, playerId, playerState);
                     if (state.getEndCondition() != null) return state;
                 }
             }
@@ -612,6 +606,19 @@ public class RoundService {
     }
 
     /**
+     * 파산 처리 공통 로직 (CQ-W5): setHasBankrupted → ELIMINATED → log → 종료 조건 체크
+     *
+     * <p>드로우 직후 파산이 확정된 경우에 호출한다.
+     * 이미 ELIMINATED 상태인 플레이어는 {@link #checkCardRecoveryBankruptcy}에서 처리한다.</p>
+     */
+    private void applyBankruptcy(RoundState state, String playerId, PlayerRoundState playerState) {
+        playerState.setHasBankrupted(true);
+        playerState.setStatus(PlayerStatus.ELIMINATED);
+        log.info("[Round] BANKRUPTCY playerId={} handSize={}", playerId, playerState.getHand().size());
+        checkBankruptcyEndCondition(state);
+    }
+
+    /**
      * 카드 회수 직후 파산 기준을 충족하면 즉시 탈락 처리한다.
      * 이미 ELIMINATED 상태인 경우에는 중복 처리하지 않는다.
      */
@@ -650,16 +657,9 @@ public class RoundService {
         return copy;
     }
 
-    /** 실제 카드와 선언 카드 중 1장이라도 다르면 거짓말 멜드 */
+    /** 실제 카드와 선언 카드 중 1장이라도 다르면 거짓말 멜드 (CQ-W4: MeldValidationService 위임) */
     private boolean isBluffMeld(List<Card> actualCards, List<DeclaredCard> declaredCards) {
-        for (int i = 0; i < actualCards.size(); i++) {
-            Card actual = actualCards.get(i);
-            DeclaredCard declared = declaredCards.get(i);
-            if (actual.rank() != declared.declaredRank() || actual.suit() != declared.declaredSuit()) {
-                return true;
-            }
-        }
-        return false;
+        return meldValidationService.isBluffMeld(actualCards, declaredCards);
     }
 
     /** meldId 로 테이블 멜드를 찾아 반환 (없으면 MELD_NOT_FOUND) */
@@ -704,10 +704,7 @@ public class RoundService {
         playerState.getHand().add(drawn);
 
         if (isBankrupt(state, playerId)) {
-            playerState.setHasBankrupted(true);
-            playerState.setStatus(PlayerStatus.ELIMINATED);
-            log.info("[Round] BANKRUPTCY (penalty draw) playerId={}", playerId);
-            checkBankruptcyEndCondition(state);
+            applyBankruptcy(state, playerId, playerState);
         }
     }
 

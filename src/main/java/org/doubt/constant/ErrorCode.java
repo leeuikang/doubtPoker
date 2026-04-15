@@ -30,6 +30,8 @@ public enum ErrorCode {
     TOKEN_EXPIRED("토큰이 만료되었습니다."),
     TOKEN_INVALID("유효하지 않은 토큰입니다."),
     DUPLICATE_NICKNAME("이미 사용 중인 닉네임입니다."),
+    // 요청 제한
+    TOO_MANY_REQUESTS("요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."),
     // 서버
     INTERNAL_SERVER_ERROR("서버 에러입니다.");
 
