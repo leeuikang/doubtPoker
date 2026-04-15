@@ -28,6 +28,7 @@ public class RoundState {
     private TurnPhase turnPhase;
     private int stockRefillCount;
     private String lastDoubtableMeldId;
+    private String lastDiscardPlayerId;     // 직전 버리기를 수행한 플레이어 (땡큐 자기 회수 방지)
     private int thankYouTimerSec;
     private RoundEndCondition endCondition; // null이면 진행 중
 }

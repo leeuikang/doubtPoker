@@ -26,6 +26,7 @@ public enum ErrorCode {
     CANNOT_GOING_OUT("거짓말 카드가 남아있으면 게임을 종료할 수 없습니다."),
     // 인증/인가
     UNAUTHORIZED("인증이 필요합니다."),
+    NOT_HOST("방장만 가능한 작업입니다."),
     TOKEN_EXPIRED("토큰이 만료되었습니다."),
     TOKEN_INVALID("유효하지 않은 토큰입니다."),
     DUPLICATE_NICKNAME("이미 사용 중인 닉네임입니다."),

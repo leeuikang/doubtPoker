@@ -76,6 +76,14 @@ public class GameController {
 
         sessionManager.addUserToRoom(message.roomId(), nickname);
 
+        // SEC-M4: 첫 입장 플레이어를 방장으로 지정
+        PokerRoom joinedRoom = findRoom(message.roomId());
+        synchronized (joinedRoom) {
+            if (joinedRoom.getHostId() == null) {
+                joinedRoom.setHostId(nickname);
+            }
+        }
+
         GameMessage verified = new GameMessage(message.type(), message.roomId(), nickname, message.payload());
         gameBroadcastService.broadcast(message.roomId(), verified);
     }
@@ -107,6 +115,11 @@ public class GameController {
         int currentRound;
 
         synchronized (room) {
+            // SEC-M4: 방장만 라운드를 시작할 수 있다
+            if (!nickname.equals(room.getHostId())) {
+                throw new GameException(ErrorCode.NOT_HOST);
+            }
+
             if (room.getStatus() == GameStatus.TOURNAMENT_END) {
                 throw new GameException(ErrorCode.INVALID_TURN_PHASE);
             }
@@ -187,6 +200,10 @@ public class GameController {
             updated = route(action, state, nickname, message.payload());
             room.setRoundState(updated);
             room.updateActivityTime();
+            // GL-C2: 라운드 종료 확정 즉시 상태 변경 — 다른 스레드의 추가 액션 및 중복 종료 처리 차단
+            if (updated.getEndCondition() != null) {
+                room.setStatus(GameStatus.ROUND_END);
+            }
         }
 
         gameBroadcastService.broadcastRoundState(message.roomId(), message.type(), nickname, updated);
@@ -201,8 +218,8 @@ public class GameController {
             Map<String, Integer> finalScores = Map.of();
 
             synchronized (room) {
-                if (room.getStatus() != GameStatus.IN_PROGRESS) return;
-                room.setStatus(GameStatus.ROUND_END);
+                // GL-C2: 첫 번째 synchronized 에서 ROUND_END 로 전환한 스레드만 진입
+                if (room.getStatus() != GameStatus.ROUND_END) return;
                 TournamentState tournament = room.getTournamentState();
                 if (tournament != null) {
                     tournament = tournamentService.applyRoundResult(tournament, scoreDelta, roundWinnerIds);

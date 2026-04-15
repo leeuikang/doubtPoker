@@ -1,6 +1,7 @@
 package org.doubt.service;
 
 import lombok.RequiredArgsConstructor;
+import org.doubt.dto.Card;
 import org.doubt.dto.GameMessage;
 import org.doubt.dto.Meld;
 import org.doubt.dto.PlayerRoundState;
@@ -9,7 +10,9 @@ import org.doubt.handler.SessionManager;
 import org.springframework.messaging.simp.SimpMessageSendingOperations;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -108,7 +111,11 @@ public class GameBroadcastService {
                     meld.getDeclaredCards(),
                     false
             );
-            masked.setExtensions(meld.getExtensions());
+            // SEC-M5: 비소유자에게 extensions 실제 카드 노출 방지 — 키(확장자 ID)는 유지, 값은 빈 리스트로 교체
+            Map<String, List<Card>> extensionsCopy = new LinkedHashMap<>();
+            meld.getExtensions().forEach((extenderId, cards) ->
+                    extensionsCopy.put(extenderId, List.of()));
+            masked.setExtensions(extensionsCopy);
             return masked;
         }).toList();
     }

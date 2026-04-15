@@ -151,7 +151,7 @@ public class MeldValidationService {
         return newDeclared.stream().allMatch(c -> c.declaredRank() == meldRank);
     }
 
-    /** STRAIGHT 확장: 같은 무늬, 기존 + 신규 선언 카드가 연속 수열 유지 */
+    /** STRAIGHT 확장: 같은 무늬, 기존 + 이미 붙은 확장 카드 + 신규 카드가 연속 수열 유지 */
     private boolean canExtendStraight(Meld existingMeld, List<DeclaredCard> newDeclared) {
         List<DeclaredCard> existing = existingMeld.getDeclaredCards();
         if (existing == null || existing.isEmpty()) return false;
@@ -160,8 +160,10 @@ public class MeldValidationService {
         // 새 카드 무늬 확인
         if (newDeclared.stream().anyMatch(c -> c.declaredSuit() != meldSuit)) return false;
 
-        // 기존 + 신규 합쳐서 연속 수열인지 확인
+        // GL-C4: 기존 선언 카드 + 이미 붙은 확장 카드(확장에 거짓말 불가이므로 실제=선언) + 신규 카드
         List<DeclaredCard> combined = new ArrayList<>(existing);
+        existingMeld.getExtensions().values().forEach(cards ->
+                cards.forEach(c -> combined.add(new DeclaredCard(c.suit(), c.rank()))));
         combined.addAll(newDeclared);
         return isConsecutiveStraight(combined);
     }

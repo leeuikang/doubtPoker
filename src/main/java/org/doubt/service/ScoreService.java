@@ -93,9 +93,11 @@ public class ScoreService {
         // 3단계: 승자 획득 점수 계산
         int totalLoserScore = loserAdjustedScores.values().stream().mapToInt(Integer::intValue).sum();
 
-        // 훌라 판정: GOING_OUT이고 승자 중 이번 라운드에 멜드를 전혀 안 낸 경우
+        // GL-C5: 훌라 판정 — GOING_OUT이고 승자의 현재 턴 시작 시점에 테이블에 본인 멜드가 없었던 경우
+        // (isHasEverMelded 사용 시 지목 성공으로 모든 멜드가 회수되어도 플래그가 잔류하는 문제 수정)
+        // hadMeldsAtTurnStart 는 advanceTurn/handleThankYou 에서 턴 시작 시점에 기록됨
         boolean isHula = endCondition == RoundEndCondition.GOING_OUT && winnerIds.stream()
-                .anyMatch(id -> !playerStates.get(id).isHasEverMelded());
+                .anyMatch(id -> !playerStates.get(id).isHadMeldsAtTurnStart());
         int winnerTotal = isHula ? totalLoserScore * GameConstants.HULA_MULTIPLIER : totalLoserScore;
 
         // 공동 승자면 균등 분배 (나머지 버림)

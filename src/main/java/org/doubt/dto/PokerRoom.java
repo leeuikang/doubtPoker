@@ -21,6 +21,8 @@ public class PokerRoom {
     private LocalDateTime lastActivityTime;
     private RoundState roundState;
     private TournamentState tournamentState;
+    /** 방장 닉네임 — 첫 입장한 플레이어가 방장이 된다 (SEC-M4) */
+    private String hostId;
 
     public PokerRoom(String roomId, String roomName) {
         this.roomId = roomId;

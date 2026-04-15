@@ -14,8 +14,10 @@ import java.nio.charset.StandardCharsets;
 @Component
 public class StompLogInterceptor implements ChannelInterceptor {
 
-    // 게임 액션 destination prefix — 손패 등 민감 정보가 payload에 포함될 수 있음 (R2-W8)
-    private static final String SENSITIVE_DEST_PREFIX = "/app/game/";
+    // SEC-M2: 민감 정보가 포함될 수 있는 destination prefix — payload를 DEBUG 레벨로 격하
+    // /app/game/ : 손패·멜드 등 게임 상태 정보
+    // /app/chat/ : 채팅 내용 (개인정보 + 로그 인젝션 경로)
+    private static final String SENSITIVE_APP_PREFIX = "/app/";
 
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
@@ -26,11 +28,11 @@ public class StompLogInterceptor implements ChannelInterceptor {
             Object raw = message.getPayload();
             String payload = (raw instanceof byte[] bytes) ? new String(bytes, StandardCharsets.UTF_8) : raw.toString();
 
-            // 게임 관련 destination 전체 — 손패 정보 노출 방지를 위해 DEBUG 레벨로 격하 (R2-W8)
-            if (dest != null && dest.startsWith(SENSITIVE_DEST_PREFIX)) {
+            // /app/ 하위 모든 경로(게임 액션·채팅)는 payload에 민감 정보 포함 가능 — DEBUG로 격하 (SEC-M2)
+            if (dest != null && dest.startsWith(SENSITIVE_APP_PREFIX)) {
                 log.debug("InBound: sessionId={}, dest={}, payload={}", accessor.getSessionId(), dest, payload);
             } else {
-                log.info("InBound: sessionId={}, dest={}, payload={}", accessor.getSessionId(), dest, payload);
+                log.info("InBound: sessionId={}, dest={}", accessor.getSessionId(), dest);
             }
         }
 

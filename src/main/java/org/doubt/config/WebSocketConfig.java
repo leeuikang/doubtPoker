@@ -5,6 +5,7 @@ import org.doubt.constant.AppConstants;
 import org.springframework.beans.factory.annotation.Value;
 import org.doubt.interceptor.ChatRateLimitInterceptor;
 import org.doubt.interceptor.CsrfHandshakeInterceptor;
+import org.doubt.interceptor.GameRateLimitInterceptor;
 import org.doubt.interceptor.StompAuthInterceptor;
 import org.doubt.interceptor.StompLogInterceptor;
 import org.doubt.interceptor.StompOutboundLogInterceptor;
@@ -28,6 +29,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     private final StompLogInterceptor stompLogInterceptor;
     private final StompOutboundLogInterceptor stompOutboundLogInterceptor;
     private final ChatRateLimitInterceptor chatRateLimitInterceptor;
+    private final GameRateLimitInterceptor gameRateLimitInterceptor;
     private final CsrfHandshakeInterceptor csrfHandshakeInterceptor;
 
     @Override
@@ -58,8 +60,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
-        // 순서: 인증 → 로깅 → 레이트리밋
-        registration.interceptors(stompAuthInterceptor, stompLogInterceptor, chatRateLimitInterceptor);
+        // 순서: 인증 → 로깅 → 채팅 레이트리밋 → 게임 레이트리밋 (SEC-M3)
+        registration.interceptors(stompAuthInterceptor, stompLogInterceptor,
+                chatRateLimitInterceptor, gameRateLimitInterceptor);
     }
 
     @Override

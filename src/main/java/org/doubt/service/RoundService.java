@@ -82,6 +82,7 @@ public class RoundService {
             prs.setHand(new ArrayList<>(dealt.get(playerId)));
             prs.setHasMeldedThisTurn(false);
             prs.setHasEverMelded(false);
+            prs.setHadMeldsAtTurnStart(false); // 라운드 시작 시 모든 플레이어 멜드 없음
             prs.setHasDeclaredStop(false);
             prs.setHasBankrupted(false);
             prs.setStatus(PlayerStatus.ACTIVE);
@@ -281,6 +282,7 @@ public class RoundService {
         }
 
         // 땡큐 타이머 5초 세팅 후 다음 플레이어 턴으로 전진
+        state.setLastDiscardPlayerId(playerId); // GL-C1: 자기 카드 즉시 회수 방지
         state.setThankYouTimerSec(GameConstants.THANK_YOU_TIMER_DISCARD_SEC);
         advanceTurn(state);
 
@@ -302,6 +304,10 @@ public class RoundService {
         if (playerState == null || playerState.getStatus() != PlayerStatus.ACTIVE) {
             throw new GameException(ErrorCode.INVALID_TURN);
         }
+        // GL-C1: 직전 버린 플레이어 본인은 땡큐 불가 — 자기 카드 즉시 회수 후 무한루프 방지
+        if (playerId.equals(state.getLastDiscardPlayerId())) {
+            throw new GameException(ErrorCode.INVALID_TURN);
+        }
         if (state.getDiscardPile().isEmpty()) {
             throw new GameException(ErrorCode.INVALID_CARD);
         }
@@ -315,10 +321,15 @@ public class RoundService {
         if (playerIndex < 0) {
             throw new GameException(ErrorCode.INVALID_TURN);
         }
+        // GL-C5: 땡큐 선언자의 "턴 시작" 시점 멜드 보유 여부 기록
+        boolean playerHasMelds = state.getTableMelds().stream()
+                .anyMatch(m -> playerId.equals(m.getOwnerId()));
+        playerState.setHadMeldsAtTurnStart(playerHasMelds);
         playerState.setHasMeldedThisTurn(false);
         state.setCurrentPlayerIndex(playerIndex);
         state.setTurnPhase(TurnPhase.ACTION);
         state.setThankYouTimerSec(0);
+        state.setLastDiscardPlayerId(null);
         state.setLastDoubtableMeldId(null);
 
         log.info("[Round] THANK_YOU playerId={}", playerId);
@@ -418,8 +429,10 @@ public class RoundService {
             throw new GameException(ErrorCode.INVALID_BLUFF);
         }
 
-        // 소유자 카드 회수
-        state.getPlayerStates().get(playerId).getHand().addAll(meld.getActualCards());
+        // 소유자 카드 회수 후 파산 체크 (GL-C3)
+        PlayerRoundState ownerState = state.getPlayerStates().get(playerId);
+        ownerState.getHand().addAll(meld.getActualCards());
+        checkCardRecoveryBankruptcy(state, playerId, ownerState);
 
         // 확장자: 1장 드로우 패널티만 (ruleBook §7 — 카드 회수는 지목 성공 시에만 해당)
         meld.getExtensions().forEach((extenderId, cards) ->
@@ -482,6 +495,7 @@ public class RoundService {
             return state;
         }
 
+        state.setLastDiscardPlayerId(playerId); // GL-C1: 자동 버리기도 동일하게 적용
         state.setThankYouTimerSec(GameConstants.THANK_YOU_TIMER_DISCARD_SEC);
         advanceTurn(state);
         log.info("[Round] TURN_TIMEOUT playerId={} discarded={}", playerId, toDiscard);
@@ -717,10 +731,27 @@ public class RoundService {
             nextIndex = (nextIndex + 1) % size;
         }
 
+        // GL-W1: 루프 종료 후 nextIndex 플레이어가 ACTIVE인지 재확인
+        // 모든 플레이어가 ELIMINATED인 극단적 경우 checkBankruptcyEndCondition 이 선행 처리하나,
+        // 안전장치로 endCondition 이 null 이면 BANKRUPTCY 강제 설정 후 종료
+        String nextPlayerId = turnOrder.get(nextIndex);
+        if (state.getPlayerStates().get(nextPlayerId).getStatus() != PlayerStatus.ACTIVE) {
+            if (state.getEndCondition() == null) {
+                state.setEndCondition(RoundEndCondition.BANKRUPTCY);
+                log.warn("[Round] advanceTurn: no ACTIVE player found, forcing BANKRUPTCY");
+            }
+            return;
+        }
+
+        // GL-C5: 턴 시작 시점 멜드 보유 여부를 기록 (훌라 판정 기준)
+        boolean nextHasMelds = state.getTableMelds().stream()
+                .anyMatch(m -> nextPlayerId.equals(m.getOwnerId()));
+        state.getPlayerStates().get(nextPlayerId).setHadMeldsAtTurnStart(nextHasMelds);
+
         state.setCurrentPlayerIndex(nextIndex);
         state.setTurnPhase(TurnPhase.DRAW);
         state.setLastDoubtableMeldId(null);
-        log.info("[Round] turn advanced to playerId={}", turnOrder.get(nextIndex));
+        log.info("[Round] turn advanced to playerId={}", nextPlayerId);
     }
 
     private List<String> buildTurnOrder(List<String> playerIds, String firstPlayerId) {

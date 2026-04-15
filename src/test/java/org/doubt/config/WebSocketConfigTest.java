@@ -27,6 +27,7 @@ class WebSocketConfigTest {
                 createStubStompLogInterceptor(),
                 createStubStompOutboundLogInterceptor(),
                 createStubChatRateLimitInterceptor(),
+                createStubGameRateLimitInterceptor(),
                 createStubCsrfHandshakeInterceptor()
         );
         ReflectionTestUtils.setField(config, "corsExtraOrigins", extraOrigins);
@@ -47,6 +48,10 @@ class WebSocketConfigTest {
 
     private org.doubt.interceptor.ChatRateLimitInterceptor createStubChatRateLimitInterceptor() {
         return org.mockito.Mockito.mock(org.doubt.interceptor.ChatRateLimitInterceptor.class);
+    }
+
+    private org.doubt.interceptor.GameRateLimitInterceptor createStubGameRateLimitInterceptor() {
+        return org.mockito.Mockito.mock(org.doubt.interceptor.GameRateLimitInterceptor.class);
     }
 
     private org.doubt.interceptor.CsrfHandshakeInterceptor createStubCsrfHandshakeInterceptor() {
