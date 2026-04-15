@@ -1,5 +1,6 @@
 package org.doubt.service;
 
+import org.doubt.constant.GameConstants;
 import org.doubt.constant.Rank;
 import org.doubt.constant.Suit;
 import org.doubt.dto.Card;
@@ -45,7 +46,7 @@ public class DeckService {
             remaining = remaining.subList(cardsPerPlayer, remaining.size());
             result.put(playerId, hand);
         }
-        result.put("STOCK", new ArrayList<>(remaining));
+        result.put(GameConstants.STOCK_KEY, new ArrayList<>(remaining));
         return result;
     }
 }

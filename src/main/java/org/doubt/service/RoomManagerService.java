@@ -2,6 +2,7 @@ package org.doubt.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.doubt.constant.GameConstants;
 import org.doubt.constant.GameStatus;
 import org.doubt.dto.PokerRoom;
 import org.doubt.repository.PokerRoomRepository;
@@ -22,7 +23,7 @@ public class RoomManagerService {
 
         log.info("Cleaning up inactive rooms");
 
-        LocalDateTime threshold = LocalDateTime.now().minusMinutes(10);
+        LocalDateTime threshold = LocalDateTime.now().minusMinutes(GameConstants.ROOM_INACTIVE_TIMEOUT_MINUTES);
 
         pokerRoomRepository.findAll().forEach(room -> {
             if (room.getPlayerList().isEmpty() || room.getLastActivityTime().isBefore(threshold)) {

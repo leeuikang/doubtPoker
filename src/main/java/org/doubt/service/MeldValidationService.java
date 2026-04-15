@@ -10,7 +10,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * 멜드 유효성 검증 서비스
@@ -117,17 +116,18 @@ public class MeldValidationService {
         List<Integer> ranks = declaredCards.stream()
                 .map(c -> c.declaredRank().getBasePoint())
                 .sorted()
-                .collect(Collectors.toList());
+                .toList();
 
         // 일반 순서 (A=1)
         if (isConsecutive(ranks)) return true;
 
         // A를 14로 취급 (A + K 조합: Q-K-A 같은 경우)
-        if (ranks.contains(Rank.ACE.getBasePoint())) {
+        int aceValue = Rank.ACE.getBasePoint();
+        if (ranks.contains(aceValue)) {
             List<Integer> aceHigh = ranks.stream()
-                    .map(r -> r == Rank.ACE.getBasePoint() ? GameConstants.ACE_HIGH_VALUE : r)
+                    .map(r -> r == aceValue ? GameConstants.ACE_HIGH_VALUE : r)
                     .sorted()
-                    .collect(Collectors.toList());
+                    .toList();
             return isConsecutive(aceHigh);
         }
         return false;

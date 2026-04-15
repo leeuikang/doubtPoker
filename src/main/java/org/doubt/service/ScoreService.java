@@ -1,5 +1,6 @@
 package org.doubt.service;
 
+import lombok.extern.slf4j.Slf4j;
 import org.doubt.constant.GameConstants;
 import org.doubt.constant.Rank;
 import org.doubt.constant.RoundEndCondition;
@@ -10,8 +11,10 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 점수 계산 서비스
@@ -22,6 +25,7 @@ import java.util.Map;
  *   - 핸드에 7 보유: 본인 점수 2배 (+1 배율, 7은 14점)
  *   - 파산: max(본인점수*2, 다른 패배자 최고점수)
  */
+@Slf4j
 @Service
 public class ScoreService {
 
@@ -51,9 +55,10 @@ public class ScoreService {
         Map<String, Integer> delta = new HashMap<>();
         playerStates.keySet().forEach(id -> delta.put(id, 0));
 
-        // 패배자: 승자가 아닌 플레이어
+        // 패배자: 승자가 아닌 플레이어 (CQ-I9: Set으로 O(n²) → O(n) 개선)
+        Set<String> winnerSet = new HashSet<>(winnerIds);
         List<String> loserIds = playerStates.keySet().stream()
-                .filter(id -> !winnerIds.contains(id))
+                .filter(id -> !winnerSet.contains(id))
                 .toList();
 
         // 1단계: 파산자 외 패배자 조정 점수 계산
@@ -98,6 +103,9 @@ public class ScoreService {
         // hadMeldsAtTurnStart 는 advanceTurn/handleThankYou 에서 턴 시작 시점에 기록됨
         boolean isHula = endCondition == RoundEndCondition.GOING_OUT && winnerIds.stream()
                 .anyMatch(id -> !playerStates.get(id).isHadMeldsAtTurnStart());
+        if (isHula) {
+            log.info("[Score] HULA detected — winnerIds={}, multiplier={}x", winnerIds, GameConstants.HULA_MULTIPLIER);
+        }
         int winnerTotal = isHula ? totalLoserScore * GameConstants.HULA_MULTIPLIER : totalLoserScore;
 
         // 공동 승자면 균등 분배 (나머지 버림)

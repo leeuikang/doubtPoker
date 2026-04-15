@@ -92,25 +92,10 @@ public class WebSocketEventListener {
             return;
         }
 
-        RoundState capturedState = null;
-        synchronized (room) {
-            capturedState = room.getRoundState();
-            if (capturedState == null) return;
-
-            PlayerRoundState prs = capturedState.getPlayerStates().get(nickname);
-            if (prs == null) return;
-
-            if (prs.getStatus() == PlayerStatus.DISCONNECTED || prs.getStatus() == PlayerStatus.AI_CONTROLLED) {
-                prs.setStatus(PlayerStatus.ACTIVE);
-                log.info("[WS] Player reconnected and restored: nickname={}, roomId={}", nickname, roomId);
-            }
-
-            sessionManager.addUserToRoom(roomId, nickname);
-            attrs.put("roomId", roomId);
-            attrs.put("userName", nickname);
-        }
-
-        gameBroadcastService.broadcastRoundState(roomId, "USER_RECONNECTED", nickname, capturedState);
+        // CQ-I6: capturedState = null 초기화 패턴을 Optional 반환 헬퍼로 대체
+        restorePlayerInRoom(room, roomId, nickname, attrs)
+                .ifPresent(state ->
+                        gameBroadcastService.broadcastRoundState(roomId, "USER_RECONNECTED", nickname, state));
     }
 
     // ─────────────────────────────────────────────────────────
@@ -148,6 +133,31 @@ public class WebSocketEventListener {
     // ─────────────────────────────────────────────────────────
     // private helpers
     // ─────────────────────────────────────────────────────────
+
+    /**
+     * synchronized 블록 내에서 플레이어 상태를 복원하고, 성공 시 RoundState를 반환한다 (CQ-I6).
+     * 방 상태가 없거나 플레이어 상태를 찾을 수 없으면 {@link Optional#empty()}를 반환한다.
+     */
+    private Optional<RoundState> restorePlayerInRoom(PokerRoom room, String roomId,
+                                                      String nickname, Map<String, Object> attrs) {
+        synchronized (room) {
+            RoundState state = room.getRoundState();
+            if (state == null) return Optional.empty();
+
+            PlayerRoundState prs = state.getPlayerStates().get(nickname);
+            if (prs == null) return Optional.empty();
+
+            if (prs.getStatus() == PlayerStatus.DISCONNECTED || prs.getStatus() == PlayerStatus.AI_CONTROLLED) {
+                prs.setStatus(PlayerStatus.ACTIVE);
+                log.info("[WS] Player reconnected and restored: nickname={}, roomId={}", nickname, roomId);
+            }
+
+            sessionManager.addUserToRoom(roomId, nickname);
+            attrs.put("roomId", roomId);
+            attrs.put("userName", nickname);
+            return Optional.of(state);
+        }
+    }
 
     /**
      * 게임 진행 중 연결 끊김을 처리한다.

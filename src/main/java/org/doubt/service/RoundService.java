@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * 라운드 진행 오케스트레이션 서비스
@@ -67,7 +68,7 @@ public class RoundService {
         Map<String, List<Card>> dealt = deckService.deal(deck, playerIds, GameConstants.INITIAL_HAND_SIZE);
 
         // 스톡 구성 및 초기 버림더미 카드 1장 세팅
-        List<Card> stockPile = new ArrayList<>(dealt.get("STOCK"));
+        List<Card> stockPile = new ArrayList<>(dealt.get(GameConstants.STOCK_KEY));
         List<Card> discardPile = new ArrayList<>();
         discardPile.add(stockPile.remove(0));
 
@@ -554,19 +555,23 @@ public class RoundService {
         };
     }
 
+    /** ACTIVE 플레이어 항목(ID→상태)을 스트림으로 반환한다 (CQ-I3). */
+    private Stream<Map.Entry<String, PlayerRoundState>> activePlayerEntries(RoundState state) {
+        return state.getPlayerStates().entrySet().stream()
+                .filter(e -> e.getValue().getStatus() == PlayerStatus.ACTIVE);
+    }
+
     /** GOING_OUT: 손패가 빈 ACTIVE 플레이어 */
     private List<String> findGoingOutWinners(RoundState state) {
-        return state.getPlayerStates().entrySet().stream()
-                .filter(e -> e.getValue().getHand().isEmpty()
-                        && e.getValue().getStatus() == PlayerStatus.ACTIVE)
+        return activePlayerEntries(state)
+                .filter(e -> e.getValue().getHand().isEmpty())
                 .map(Map.Entry::getKey)
                 .toList();
     }
 
     /** STOP / STOCK_DEPLETED: ACTIVE 플레이어 중 핸드 점수 최솟값 보유자 (공동 가능) */
     private List<String> findLowestScoreWinners(RoundState state) {
-        Map<String, Integer> scores = state.getPlayerStates().entrySet().stream()
-                .filter(e -> e.getValue().getStatus() == PlayerStatus.ACTIVE)
+        Map<String, Integer> scores = activePlayerEntries(state)
                 .collect(Collectors.toMap(Map.Entry::getKey,
                         e -> scoreService.calculateHandScore(e.getValue().getHand())));
         if (scores.isEmpty()) return List.of();
@@ -579,8 +584,7 @@ public class RoundService {
 
     /** BANKRUPTCY: 파산 후 남은 ACTIVE 플레이어 전원 승자 */
     private List<String> findActiveWinners(RoundState state) {
-        return state.getPlayerStates().entrySet().stream()
-                .filter(e -> e.getValue().getStatus() == PlayerStatus.ACTIVE)
+        return activePlayerEntries(state)
                 .map(Map.Entry::getKey)
                 .toList();
     }
@@ -591,9 +595,7 @@ public class RoundService {
      */
     private void checkBankruptcyEndCondition(RoundState state) {
         if (state.getEndCondition() != null) return;
-        long activeCount = state.getPlayerStates().values().stream()
-                .filter(p -> p.getStatus() == PlayerStatus.ACTIVE)
-                .count();
+        long activeCount = activePlayerEntries(state).count();
         if (activeCount <= 1) {
             state.setEndCondition(RoundEndCondition.BANKRUPTCY);
             log.info("[Round] BANKRUPTCY end: {} active player(s) remain", activeCount);

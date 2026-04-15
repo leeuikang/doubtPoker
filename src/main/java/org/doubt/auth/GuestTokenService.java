@@ -10,6 +10,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
+import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
 import java.util.UUID;
@@ -41,6 +42,11 @@ public class GuestTokenService {
             @Value("${app.auth.secret}") String secret,
             @Value("${app.auth.expiry-hours}") int expiryHours) {
         this.secretKeyBytes = secret.getBytes(StandardCharsets.UTF_8);
+        // SEC-L2: 시크릿 키 최소 32바이트 검증 — HMAC-SHA256 보안 강도 보장
+        if (this.secretKeyBytes.length < 32) {
+            throw new IllegalArgumentException(
+                    "Secret key must be at least 32 bytes for HMAC-SHA256, got " + this.secretKeyBytes.length);
+        }
         this.expiryMillis = (long) expiryHours * 3600_000L;
         this.instanceId = UUID.randomUUID().toString();
         log.info("GuestTokenService initialized: instanceId={}", instanceId);
@@ -163,13 +169,13 @@ public class GuestTokenService {
         return new String(Base64.getUrlDecoder().decode(s), StandardCharsets.UTF_8);
     }
 
-    /** 타이밍 공격 방지를 위한 상수 시간 비교 */
+    /**
+     * 타이밍 공격 방지를 위한 상수 시간 비교 (SEC-L1)
+     * JDK 표준 {@link MessageDigest#isEqual}은 길이 불일치 시에도 상수 시간을 보장한다.
+     */
     private static boolean constantTimeEquals(String a, String b) {
-        if (a.length() != b.length()) return false;
-        int diff = 0;
-        for (int i = 0; i < a.length(); i++) {
-            diff |= a.charAt(i) ^ b.charAt(i);
-        }
-        return diff == 0;
+        return MessageDigest.isEqual(
+                a.getBytes(StandardCharsets.UTF_8),
+                b.getBytes(StandardCharsets.UTF_8));
     }
 }

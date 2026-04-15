@@ -26,4 +26,22 @@ public class PlayerRoundState {
     private boolean hasBankrupted;    // 파산(10장 이상) 여부 (ScoreService 배율 판정용)
     private PlayerStatus status;
     private int disconnectCount;
+
+    /**
+     * 손패만 빈 리스트로 교체한 복사본을 반환한다 (CQ-I2).
+     * 상대방에게 손패를 숨길 때 사용한다.
+     */
+    public PlayerRoundState withMaskedHand() {
+        PlayerRoundState copy = new PlayerRoundState();
+        copy.playerId = this.playerId;
+        copy.hand = List.of();
+        copy.hasMeldedThisTurn = this.hasMeldedThisTurn;
+        copy.hasEverMelded = this.hasEverMelded;
+        copy.hadMeldsAtTurnStart = this.hadMeldsAtTurnStart;
+        copy.hasDeclaredStop = this.hasDeclaredStop;
+        copy.hasBankrupted = this.hasBankrupted;
+        copy.status = this.status;
+        copy.disconnectCount = this.disconnectCount;
+        return copy;
+    }
 }

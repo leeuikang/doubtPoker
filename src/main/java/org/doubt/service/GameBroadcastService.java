@@ -10,7 +10,6 @@ import org.doubt.handler.SessionManager;
 import org.springframework.messaging.simp.SimpMessageSendingOperations;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -77,16 +76,7 @@ public class GameBroadcastService {
             if (playerId.equals(viewerNickname)) {
                 maskedPlayerStates.put(playerId, prs);
             } else {
-                PlayerRoundState maskedPrs = new PlayerRoundState();
-                maskedPrs.setPlayerId(prs.getPlayerId());
-                maskedPrs.setHand(List.of());
-                maskedPrs.setHasMeldedThisTurn(prs.isHasMeldedThisTurn());
-                maskedPrs.setHasEverMelded(prs.isHasEverMelded());
-                maskedPrs.setHasDeclaredStop(prs.isHasDeclaredStop());
-                maskedPrs.setHasBankrupted(prs.isHasBankrupted());
-                maskedPrs.setStatus(prs.getStatus());
-                maskedPrs.setDisconnectCount(prs.getDisconnectCount());
-                maskedPlayerStates.put(playerId, maskedPrs);
+                maskedPlayerStates.put(playerId, prs.withMaskedHand());
             }
         });
         masked.setPlayerStates(maskedPlayerStates);

@@ -19,7 +19,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @DisplayName("GuestTokenService")
 class GuestTokenServiceTest {
 
-    private static final String SECRET = "test-secret";
+    // SEC-L2: 시크릿 키는 최소 32바이트 이상이어야 한다
+    private static final String SECRET = "test-secret-key-that-is-32bytes!";
     private static final int EXPIRY_HOURS = 1;
 
     private GuestTokenService tokenService;
