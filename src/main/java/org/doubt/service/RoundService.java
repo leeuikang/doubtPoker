@@ -82,7 +82,6 @@ public class RoundService {
             prs.setPlayerId(playerId);
             prs.setHand(new ArrayList<>(dealt.get(playerId)));
             prs.setHasMeldedThisTurn(false);
-            prs.setHasEverMelded(false);
             prs.setHadMeldsAtTurnStart(false); // 라운드 시작 시 모든 플레이어 멜드 없음
             prs.setHasDeclaredStop(false);
             prs.setHasBankrupted(false);
@@ -194,7 +193,6 @@ public class RoundService {
         state.setLastDoubtableMeldId(meld.getId());
 
         playerState.setHasMeldedThisTurn(true);
-        playerState.setHasEverMelded(true);
 
         // 손패 소진 → 고잉아웃 (거짓말 없는 경우만, 위에서 거짓말+빈 손 차단됨)
         if (playerState.getHand().isEmpty()) {
@@ -255,7 +253,7 @@ public class RoundService {
     /**
      * 버리기 처리
      *
-     * <p>ruleBook §5 DISCARD 단계:
+     * <p>ruleBook §5 ACTION 단계의 마지막 액션:
      * 손패 1장을 버림더미 상단에 추가하고 땡큐 타이머 5초를 세팅한다.
      * 마지막 1장을 버려 손패가 0장이 되면 고잉아웃(GOING_OUT) 종료.</p>
      */

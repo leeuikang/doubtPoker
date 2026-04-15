@@ -86,6 +86,7 @@ class CqI6FixTest {
             when(reconnectRegistry.findRoom("Alice")).thenReturn(Optional.of("room1"));
             when(reconnectRegistry.verifyGuestId("Alice", "guest-1")).thenReturn(true);
             when(pokerRoomRepository.findById("room1")).thenReturn(Optional.of(room));
+            when(nicknameRegistry.register("Alice")).thenReturn(true);
 
             listener.handleWebSocketConnectListener(buildConnectedEvent(attrs));
 
@@ -102,6 +103,7 @@ class CqI6FixTest {
             when(reconnectRegistry.findRoom("Alice")).thenReturn(Optional.of("room1"));
             when(reconnectRegistry.verifyGuestId("Alice", "guest-1")).thenReturn(true);
             when(pokerRoomRepository.findById("room1")).thenReturn(Optional.of(room));
+            when(nicknameRegistry.register("Alice")).thenReturn(true);
 
             listener.handleWebSocketConnectListener(buildConnectedEvent(attrs));
 

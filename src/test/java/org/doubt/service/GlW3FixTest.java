@@ -96,7 +96,6 @@ class GlW3FixTest {
         prs.setHand(new ArrayList<>());
         prs.setStatus(PlayerStatus.ACTIVE);
         prs.setHasMeldedThisTurn(false);
-        prs.setHasEverMelded(false);
         prs.setHadMeldsAtTurnStart(false);
         prs.setHasDeclaredStop(false);
         prs.setHasBankrupted(false);

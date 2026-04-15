@@ -71,14 +71,6 @@ class CqI2FixTest {
         }
 
         @Test
-        @DisplayName("hasEverMelded가 복사된다")
-        void has_ever_melded_is_copied() {
-            PlayerRoundState original = buildFullState();
-            original.setHasEverMelded(true);
-            assertThat(original.withMaskedHand().isHasEverMelded()).isTrue();
-        }
-
-        @Test
         @DisplayName("hadMeldsAtTurnStart가 복사된다 (기존 수동 복사에서 누락된 필드)")
         void had_melds_at_turn_start_is_copied() {
             PlayerRoundState original = buildFullState();

@@ -346,6 +346,7 @@ class WebSocketEventListenerTest {
             room.setRoundState(state);
 
             when(pokerRoomRepository.findById(roomId)).thenReturn(Optional.of(room));
+            when(nicknameRegistry.register(nickname)).thenReturn(true);
 
             SessionConnectedEvent event = buildConnectEvent(attrs);
             webSocketEventListener.handleWebSocketConnectListener(event);
@@ -385,6 +386,7 @@ class WebSocketEventListenerTest {
             room.setRoundState(stateAtReconnect);
 
             when(pokerRoomRepository.findById(roomId)).thenReturn(Optional.of(room));
+            when(nicknameRegistry.register(nickname)).thenReturn(true);
 
             SessionConnectedEvent event = buildConnectEvent(attrs);
             webSocketEventListener.handleWebSocketConnectListener(event);

@@ -87,9 +87,14 @@ class CqW1W2FixTest {
         }
 
         @Test
-        @DisplayName("전체 인수 생성자로 PokerPlayer를 생성하면 getter가 올바른 값을 반환한다")
-        void all_args_constructor_sets_fields_correctly() {
-            PokerPlayer player = new PokerPlayer("session-1", "Alice", 100, true);
+        @DisplayName("빌더로 PokerPlayer를 생성하면 getter가 올바른 값을 반환한다")
+        void builder_sets_fields_correctly() {
+            PokerPlayer player = PokerPlayer.builder()
+                    .sessionId("session-1")
+                    .name("Alice")
+                    .chips(100)
+                    .isReady(true)
+                    .build();
 
             assertThat(player.getSessionId()).isEqualTo("session-1");
             assertThat(player.getName()).isEqualTo("Alice");
@@ -111,7 +116,7 @@ class CqW1W2FixTest {
         @Test
         @DisplayName("name만 지정한 PokerPlayer에서 getName은 해당 이름을 반환한다")
         void player_with_name_returns_name() {
-            PokerPlayer player = new PokerPlayer(null, "Bob", 0, false);
+            PokerPlayer player = PokerPlayer.builder().name("Bob").build();
             assertThat(player.getName()).isEqualTo("Bob");
         }
     }

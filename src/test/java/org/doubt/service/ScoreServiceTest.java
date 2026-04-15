@@ -37,13 +37,13 @@ class ScoreServiceTest {
 
     private PlayerRoundState makeState(String playerId, List<Card> hand,
                                        boolean hasDeclaredStop, boolean hasBankrupted,
-                                       boolean hasEverMelded) {
+                                       boolean hadMeldsAtTurnStart) {
         PlayerRoundState state = new PlayerRoundState();
         state.setPlayerId(playerId);
         state.setHand(hand);
         state.setHasDeclaredStop(hasDeclaredStop);
         state.setHasBankrupted(hasBankrupted);
-        state.setHasEverMelded(hasEverMelded);
+        state.setHadMeldsAtTurnStart(hadMeldsAtTurnStart);
         state.setStatus(PlayerStatus.ACTIVE);
         return state;
     }
@@ -345,7 +345,7 @@ class ScoreServiceTest {
         @DisplayName("GOING_OUT이고 승자가 멜드를 전혀 안 했으면 훌라: 패자 합계의 4배")
         void hula_winner_gets_four_times_loser_total() {
             // 승자: 멜드한 적 없음 (HULA 조건)
-            PlayerRoundState winner = makeState("w1", List.of(), false, false, false); // hasEverMelded=false
+            PlayerRoundState winner = makeState("w1", List.of(), false, false, false); // hadMeldsAtTurnStart=false
             PlayerRoundState loser = makeState("l1",
                     List.of(card(Suit.SPADE, Rank.FIVE)), // 5점
                     false, false, false);
@@ -361,7 +361,7 @@ class ScoreServiceTest {
         @Test
         @DisplayName("GOING_OUT이고 승자가 멜드를 했으면 훌라 아님: 패자 합계 1배")
         void non_hula_winner_gets_base_loser_total() {
-            PlayerRoundState winner = makeState("w1", List.of(), false, false, true); // hasEverMelded=true
+            PlayerRoundState winner = makeState("w1", List.of(), false, false, true); // hadMeldsAtTurnStart=true
             PlayerRoundState loser = makeState("l1",
                     List.of(card(Suit.SPADE, Rank.FIVE)),
                     false, false, false);
@@ -377,7 +377,7 @@ class ScoreServiceTest {
         @Test
         @DisplayName("STOP 조건에서 멜드 미사용이어도 훌라가 아니다")
         void stop_condition_not_hula_even_without_meld() {
-            PlayerRoundState winner = makeState("w1", List.of(), false, false, false); // hasEverMelded=false
+            PlayerRoundState winner = makeState("w1", List.of(), false, false, false); // hadMeldsAtTurnStart=false
             PlayerRoundState loser = makeState("l1",
                     List.of(card(Suit.SPADE, Rank.FIVE)),
                     false, false, false);

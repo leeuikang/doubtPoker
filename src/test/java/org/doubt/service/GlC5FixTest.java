@@ -66,7 +66,6 @@ class GlC5FixTest {
         prs.setHand(new ArrayList<>(hand));
         prs.setStatus(PlayerStatus.ACTIVE);
         prs.setHasMeldedThisTurn(false);
-        prs.setHasEverMelded(false);
         prs.setHadMeldsAtTurnStart(false);
         prs.setHasDeclaredStop(false);
         prs.setHasBankrupted(false);
@@ -256,7 +255,6 @@ class GlC5FixTest {
         @Test
         @DisplayName("GL-C5 원래 버그: 이전 턴에 멜드가 있었으나 지목으로 회수된 경우 — hadMeldsAtTurnStart=false이면 훌라 적용")
         void calculateRoundScoreDelta_hulaEligible_afterDoubtRecovery() {
-            // 승자는 이전에 멜드를 낸 적 있음(hasEverMelded=true)이지만
             // 현재 턴 시작 시점에 지목으로 멜드가 모두 회수되어 hadMeldsAtTurnStart=false인 상태
             List<Card> winnerHand = new ArrayList<>();
             List<Card> loserHand = List.of(
@@ -268,7 +266,6 @@ class GlC5FixTest {
             winnerState.setPlayerId(WINNER);
             winnerState.setHand(new ArrayList<>(winnerHand));
             winnerState.setHadMeldsAtTurnStart(false);  // 핵심: 현재 턴 시작 시 멜드 없음
-            winnerState.setHasEverMelded(true);          // 과거에는 멜드한 적 있음 (레거시)
             winnerState.setHasDeclaredStop(false);
             winnerState.setHasBankrupted(false);
             winnerState.setStatus(PlayerStatus.ACTIVE);
@@ -277,7 +274,6 @@ class GlC5FixTest {
             loserState.setPlayerId(LOSER);
             loserState.setHand(new ArrayList<>(loserHand));
             loserState.setHadMeldsAtTurnStart(false);
-            loserState.setHasEverMelded(false);
             loserState.setHasDeclaredStop(false);
             loserState.setHasBankrupted(false);
             loserState.setStatus(PlayerStatus.ACTIVE);

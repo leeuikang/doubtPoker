@@ -107,7 +107,6 @@ class GlC1C2C3FixTest {
         prs.setHand(new ArrayList<>(hand));
         prs.setStatus(PlayerStatus.ACTIVE);
         prs.setHasMeldedThisTurn(false);
-        prs.setHasEverMelded(false);
         prs.setHasDeclaredStop(false);
         prs.setHasBankrupted(false);
         prs.setDisconnectCount(0);

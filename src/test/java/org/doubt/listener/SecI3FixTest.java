@@ -27,6 +27,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -84,6 +85,7 @@ class SecI3FixTest {
         @DisplayName("DISCONNECTED 플레이어가 재접속하면 nicknameRegistry.register가 호출된다")
         void disconnected_player_reconnect_registers_nickname() {
             arrangeReconnect("Alice");
+            when(nicknameRegistry.register("Alice")).thenReturn(true);
 
             listener.handleWebSocketConnectListener(buildConnectedEvent("Alice", "g1"));
 
@@ -95,6 +97,7 @@ class SecI3FixTest {
         void ai_controlled_player_reconnect_registers_nickname() {
             playerState.setStatus(PlayerStatus.AI_CONTROLLED);
             arrangeReconnect("Alice");
+            when(nicknameRegistry.register("Alice")).thenReturn(true);
 
             listener.handleWebSocketConnectListener(buildConnectedEvent("Alice", "g1"));
 
@@ -110,6 +113,18 @@ class SecI3FixTest {
             listener.handleWebSocketConnectListener(buildConnectedEvent("Alice", "g1"));
 
             verify(nicknameRegistry, never()).register(any());
+        }
+
+        @Test
+        @DisplayName("register()가 false를 반환하면 플레이어 상태가 복원되지 않는다")
+        void register_returns_false_player_not_restored() {
+            arrangeReconnect("Alice");
+            when(nicknameRegistry.register("Alice")).thenReturn(false);
+
+            listener.handleWebSocketConnectListener(buildConnectedEvent("Alice", "g1"));
+
+            assertThat(playerState.getStatus()).isEqualTo(PlayerStatus.DISCONNECTED);
+            verify(gameBroadcastService, never()).broadcastRoundState(any(), any(), any(), any());
         }
     }
 

@@ -83,7 +83,6 @@ class GlW1FixTest {
         prs.setHand(new ArrayList<>(hand));
         prs.setStatus(status);
         prs.setHasMeldedThisTurn(false);
-        prs.setHasEverMelded(false);
         prs.setHadMeldsAtTurnStart(false);
         prs.setHasDeclaredStop(false);
         prs.setHasBankrupted(false);

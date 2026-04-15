@@ -94,7 +94,6 @@ class RoundServiceTest {
         prs.setHand(new ArrayList<>(currentPlayerHand));
         prs.setStatus(PlayerStatus.ACTIVE);
         prs.setHasMeldedThisTurn(false);
-        prs.setHasEverMelded(false);
         prs.setHasDeclaredStop(false);
         prs.setHasBankrupted(false);
         prs.setDisconnectCount(0);
@@ -271,7 +270,6 @@ class RoundServiceTest {
             for (String pid : twoPlayers) {
                 PlayerRoundState prs = state.getPlayerStates().get(pid);
                 assertThat(prs.isHasMeldedThisTurn()).isFalse();
-                assertThat(prs.isHasEverMelded()).isFalse();
                 assertThat(prs.isHasDeclaredStop()).isFalse();
                 assertThat(prs.isHasBankrupted()).isFalse();
                 assertThat(prs.getStatus()).isEqualTo(PlayerStatus.ACTIVE);
@@ -860,7 +858,7 @@ class RoundServiceTest {
             }
 
             @Test
-            @DisplayName("멜드 성공 시 hasMeldedThisTurn 과 hasEverMelded 가 true 로 설정된다")
+            @DisplayName("멜드 성공 시 hasMeldedThisTurn 이 true 로 설정된다")
             void player_flags_set_after_meld() {
                 Card card = new Card(Suit.SPADE, Rank.SEVEN);
                 List<Card> hand = new ArrayList<>(List.of(card, new Card(Suit.HEART, Rank.TWO)));
@@ -877,7 +875,6 @@ class RoundServiceTest {
 
                 PlayerRoundState prs = result.getPlayerStates().get(PLAYER_ID);
                 assertThat(prs.isHasMeldedThisTurn()).isTrue();
-                assertThat(prs.isHasEverMelded()).isTrue();
             }
 
             @Test
@@ -1204,7 +1201,6 @@ class RoundServiceTest {
                 prs.setHand(pid.equals(p1) ? new ArrayList<>(p1Hand) : makeCards(5));
                 prs.setStatus(PlayerStatus.ACTIVE);
                 prs.setHasMeldedThisTurn(false);
-                prs.setHasEverMelded(false);
                 prs.setHasDeclaredStop(false);
                 prs.setHasBankrupted(false);
                 prs.setDisconnectCount(0);
@@ -1238,7 +1234,6 @@ class RoundServiceTest {
                 prs.setHand(pid.equals(p1) ? new ArrayList<>(p1Hand) : makeCards(3));
                 prs.setStatus(pid.equals(p2) ? p2Status : PlayerStatus.ACTIVE);
                 prs.setHasMeldedThisTurn(false);
-                prs.setHasEverMelded(false);
                 prs.setHasDeclaredStop(false);
                 prs.setHasBankrupted(false);
                 prs.setDisconnectCount(0);
@@ -1508,7 +1503,6 @@ class RoundServiceTest {
                 prs.setHand(makeCards(3));
                 prs.setStatus(PlayerStatus.ACTIVE);
                 prs.setHasMeldedThisTurn(true);
-                prs.setHasEverMelded(false);
                 prs.setHasDeclaredStop(false);
                 prs.setHasBankrupted(false);
                 prs.setDisconnectCount(0);
@@ -1777,7 +1771,6 @@ class RoundServiceTest {
                 prs.setHand(pid.equals(P1) ? new ArrayList<>(p1Hand) : makeCards(4));
                 prs.setStatus(PlayerStatus.ACTIVE);
                 prs.setHasMeldedThisTurn(false);
-                prs.setHasEverMelded(false);
                 prs.setHasDeclaredStop(false);
                 prs.setHasBankrupted(false);
                 prs.setDisconnectCount(0);
@@ -1979,7 +1972,6 @@ class RoundServiceTest {
                 prs.setHand(pid.equals(P1) ? new ArrayList<>(p1Hand) : makeCards(4));
                 prs.setStatus(PlayerStatus.ACTIVE);
                 prs.setHasMeldedThisTurn(false);
-                prs.setHasEverMelded(false);
                 prs.setHasDeclaredStop(false);
                 prs.setHasBankrupted(false);
                 prs.setDisconnectCount(0);
@@ -2200,7 +2192,6 @@ class RoundServiceTest {
             prs.setStatus(status);
             prs.setHand(new ArrayList<>(hand));
             prs.setHasMeldedThisTurn(false);
-            prs.setHasEverMelded(false);
             prs.setHasDeclaredStop(false);
             prs.setHasBankrupted(false);
             prs.setDisconnectCount(0);
@@ -2407,7 +2398,6 @@ class RoundServiceTest {
                 prs.setHand(pid.equals(p1) ? new ArrayList<>(p1Hand) : makeCards(4));
                 prs.setStatus(PlayerStatus.ACTIVE);
                 prs.setHasMeldedThisTurn(false);
-                prs.setHasEverMelded(false);
                 prs.setHasDeclaredStop(false);
                 prs.setHasBankrupted(false);
                 prs.setDisconnectCount(0);
@@ -2441,7 +2431,6 @@ class RoundServiceTest {
                 prs.setHand(pid.equals(p1) ? new ArrayList<>(p1Hand) : makeCards(4));
                 prs.setStatus(PlayerStatus.ACTIVE);
                 prs.setHasMeldedThisTurn(false);
-                prs.setHasEverMelded(false);
                 prs.setHasDeclaredStop(false);
                 prs.setHasBankrupted(false);
                 prs.setDisconnectCount(0);
@@ -2529,7 +2518,6 @@ class RoundServiceTest {
                 prs.setHand(pid.equals(P1) ? new ArrayList<>(p1Hand) : makeCards(4));
                 prs.setStatus(PlayerStatus.ACTIVE);
                 prs.setHasMeldedThisTurn(false);
-                prs.setHasEverMelded(false);
                 prs.setHasDeclaredStop(false);
                 prs.setHasBankrupted(false);
                 prs.setDisconnectCount(0);
@@ -2562,7 +2550,6 @@ class RoundServiceTest {
                 prs.setHand(pid.equals(p1) ? makeCards(9) : makeCards(4));
                 prs.setStatus(PlayerStatus.ACTIVE);
                 prs.setHasMeldedThisTurn(false);
-                prs.setHasEverMelded(false);
                 prs.setHasDeclaredStop(false);
                 prs.setHasBankrupted(false);
                 prs.setDisconnectCount(0);

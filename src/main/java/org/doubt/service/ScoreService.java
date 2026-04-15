@@ -118,9 +118,9 @@ public class ScoreService {
     }
 
     /**
-     * 토너먼트 점수에 라운드 델타 반영 및 탈락자 처리
-     * - 점수가 0 이하가 되면 eliminatedPlayers에 추가
+     * 토너먼트 점수에 라운드 델타 반영
      * - roundHistory에 이번 라운드 델타 기록
+     * - 탈락자 처리는 TournamentService에서 별도로 수행
      *
      * @return 갱신된 TournamentState
      */

@@ -100,7 +100,7 @@ class SecM4HostCheckTest {
     }
 
     private PokerPlayer buildPlayer(String name) {
-        return new PokerPlayer(null, name, 0, false);
+        return PokerPlayer.builder().name(name).build();
     }
 
     // ----------------------------------------------------------------
