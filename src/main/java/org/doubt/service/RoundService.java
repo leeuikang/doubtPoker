@@ -21,7 +21,6 @@ import org.doubt.dto.request.DrawRequest;
 import org.doubt.dto.request.ExtendRequest;
 import org.doubt.dto.request.MeldRequest;
 import org.doubt.dto.request.RevealBluffRequest;
-import org.doubt.dto.request.StopRequest;
 import org.doubt.exception.GameException;
 
 import org.springframework.stereotype.Service;
@@ -338,7 +337,7 @@ public class RoundService {
      * <p>ruleBook §8.1: 턴 시작(DRAW 전) 핸드 점수가 {STOP_SCORE_THRESHOLD}점 이하일 때만 선언 가능.
      * 모든 플레이어 핸드 공개 후 최저점 보유자 승리.</p>
      */
-    public RoundState handleStop(RoundState state, String playerId, StopRequest request) {
+    public RoundState handleStop(RoundState state, String playerId) {
         validateCurrentPlayer(state, playerId);
         validatePhase(state, TurnPhase.DRAW);
 
@@ -714,7 +713,9 @@ public class RoundService {
      */
     private void advanceTurn(RoundState state) {
         String currentPlayerId = state.getTurnOrder().get(state.getCurrentPlayerIndex());
-        state.getPlayerStates().get(currentPlayerId).setHasMeldedThisTurn(false);
+        PlayerRoundState currentPlayerState = state.getPlayerStates().get(currentPlayerId);
+        boolean currentPlayerMelded = currentPlayerState.isHasMeldedThisTurn();
+        currentPlayerState.setHasMeldedThisTurn(false);
 
         List<String> turnOrder = state.getTurnOrder();
         int size = turnOrder.size();
@@ -747,7 +748,12 @@ public class RoundService {
 
         state.setCurrentPlayerIndex(nextIndex);
         state.setTurnPhase(TurnPhase.DRAW);
-        state.setLastDoubtableMeldId(null);
+        // 현재 플레이어가 이번 턴에 멜드를 낸 경우 lastDoubtableMeldId를 유지해
+        // 다음 플레이어가 ACTION 단계에서 지목할 수 있도록 한다 (ruleBook §7).
+        // 멜드 없이 버린 경우에는 지목 대상이 없으므로 초기화한다.
+        if (!currentPlayerMelded) {
+            state.setLastDoubtableMeldId(null);
+        }
         log.info("[Round] turn advanced to playerId={}", nextPlayerId);
     }
 

@@ -20,7 +20,6 @@ import org.doubt.dto.request.DrawRequest;
 import org.doubt.dto.request.ExtendRequest;
 import org.doubt.dto.request.MeldRequest;
 import org.doubt.dto.request.RevealBluffRequest;
-import org.doubt.dto.request.StopRequest;
 import org.doubt.exception.GameException;
 import org.doubt.handler.SessionManager;
 import org.doubt.repository.PokerRoomRepository;
@@ -290,7 +289,7 @@ public class GameController {
             case EXTEND       -> roundService.handleExtend(state, playerId, toRequest(payload, ExtendRequest.class));
             case DISCARD      -> roundService.handleDiscard(state, playerId, toRequest(payload, DiscardRequest.class));
             case THANK_YOU    -> roundService.handleThankYou(state, playerId);
-            case STOP         -> roundService.handleStop(state, playerId, new StopRequest());
+            case STOP         -> roundService.handleStop(state, playerId);
             case DOUBT        -> roundService.handleDoubt(state, playerId, toRequest(payload, DoubtRequest.class));
             case REVEAL_BLUFF -> roundService.handleRevealBluff(state, playerId, toRequest(payload, RevealBluffRequest.class));
             default           -> throw new GameException(ErrorCode.INVALID_TURN_PHASE);
